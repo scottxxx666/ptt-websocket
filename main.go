@@ -110,7 +110,7 @@ func main() {
 				return
 			}
 		} else if bytes.Contains(d, []byte("您想刪除其他重複登入的連線嗎")) {
-			err = send(conn, []byte("Y\r"))
+			err = send(conn, []byte(os.Getenv("revokeOthers")+"\r"))
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -132,7 +132,7 @@ func main() {
 	}
 	fmt.Printf("%s\n", d)
 
-	searchBoard := []byte("C_Chat")
+	searchBoard := []byte(os.Getenv("board"))
 	for i := range searchBoard {
 		if err = send(conn, searchBoard[i:i+1]); err != nil {
 			fmt.Println(err)
@@ -172,7 +172,7 @@ func main() {
 		}
 	}
 
-	articleId := []byte("#1aKZDb9b\r\r")
+	articleId := []byte(os.Getenv("article") + "\r\r")
 	for i := range articleId {
 		if err = send(conn, articleId[i:i+1]); err != nil {
 			fmt.Println(err)
