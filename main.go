@@ -110,7 +110,11 @@ func main() {
 				return
 			}
 		} else if bytes.Contains(d, []byte("您想刪除其他重複登入的連線嗎")) {
-			panic("duplicate login")
+			err = send(conn, []byte("Y\r"))
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
 		} else if bytes.Contains(d, []byte("【主功能表】")) {
 			break
 		}
@@ -128,7 +132,7 @@ func main() {
 	}
 	fmt.Printf("%s\n", d)
 
-	searchBoard := []byte("C_Chat\r")
+	searchBoard := []byte("C_Chat")
 	for i := range searchBoard {
 		if err = send(conn, searchBoard[i:i+1]); err != nil {
 			fmt.Println(err)
@@ -142,18 +146,61 @@ func main() {
 		fmt.Printf("%s\n", d)
 	}
 
-	if err = send(conn, []byte(" ")); err != nil {
+	if err = send(conn, []byte("\r")); err != nil {
 		fmt.Println(err)
 		return
 	}
-	d, err = read(conn)
-	if err != nil {
-		fmt.Println(err)
-		return
+	for {
+		d, err = read(conn)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("%s\n", d)
+		if bytes.Contains(d, []byte("按任意鍵繼續")) {
+			if err = send(conn, []byte(" ")); err != nil {
+				fmt.Println(err)
+				return
+			}
+			d, err = read(conn)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Printf("%s\n", d)
+			break
+		}
 	}
-	fmt.Printf("%s\n", d)
 
-	if err = send(conn, []byte("eeeeee\rY\r")); err != nil {
+	articleId := []byte("#1aKZDb9b\r\r")
+	for i := range articleId {
+		if err = send(conn, articleId[i:i+1]); err != nil {
+			fmt.Println(err)
+			return
+		}
+		d, err := read(conn)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("%s\n", d)
+	}
+
+	cc := []byte("G\b\b")
+	for i := range cc {
+		if err = send(conn, cc[i:i+1]); err != nil {
+			fmt.Println(err)
+			return
+		}
+		d, err := read(conn)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("%s\n", d)
+	}
+
+	if err = send(conn, []byte("qeeeeee\rY\r")); err != nil {
 		fmt.Println(err)
 		return
 	}
@@ -167,7 +214,9 @@ func main() {
 
 		if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err := send(conn, []byte(" "))
-			panic(err)
+			if err != nil {
+				panic(err)
+			}
 		}
 	}
 }
