@@ -65,37 +65,76 @@ func main() {
 
 	defer conn.Close()
 
-	data, err := read(conn)
-	if err != nil {
-		fmt.Println("read fail")
+	for {
+		d, err := read(conn)
+		if err != nil {
+			fmt.Println("read fail")
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("%s\n", d)
+
+		if bytes.Contains(d, []byte("請輸入代號")) {
+			fmt.Println("send account")
+			account := []byte(os.Getenv("account"))
+			for i := range account {
+				err = send(conn, account[i:i+1])
+				if err != nil {
+					fmt.Println(err)
+					return
+				}
+				if _, err := read(conn); err != nil {
+					fmt.Println(err)
+					return
+				}
+			}
+			err = send(conn, []byte("\r"))
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+		} else if bytes.Contains(d, []byte("請輸入您的密碼")) {
+			password := []byte(os.Getenv("password") + "\r")
+			for i := range password {
+				if err = send(conn, password[i:i+1]); err != nil {
+					fmt.Println(err)
+					return
+				}
+			}
+		} else if bytes.Contains(d, []byte("密碼不對")) {
+			panic("wrong password")
+		} else if bytes.Contains(d, []byte("請按任意鍵繼續")) {
+			err = send(conn, []byte(" "))
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+		} else if bytes.Contains(d, []byte("您想刪除其他重複登入的連線嗎")) {
+			panic("duplicate login")
+		} else if bytes.Contains(d, []byte("【主功能表】")) {
+			break
+		}
+	}
+
+	searchBoardCmd := []byte("s")
+	if err = send(conn, searchBoardCmd); err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("%s\n", data)
-
-	account := []byte(os.Getenv("account") + "\r")
-	for i := range account {
-		err = send(conn, account[i:i+1])
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		if _, err := read(conn); err != nil {
-			fmt.Println(err)
-			return
-		}
+	d, err := read(conn)
+	if err != nil {
+		fmt.Println(err)
+		return
 	}
+	fmt.Printf("%s\n", d)
 
-	password := []byte(os.Getenv("password") + "\r")
-	for i := range password {
-		if err = send(conn, password[i:i+1]); err != nil {
+	searchBoard := []byte("C_Chat\r")
+	for i := range searchBoard {
+		if err = send(conn, searchBoard[i:i+1]); err != nil {
 			fmt.Println(err)
 			return
 		}
-	}
-
-	for i := 0; i < 5; i++ {
-		d, err := read(conn)
+		_, err := read(conn)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -107,17 +146,28 @@ func main() {
 		fmt.Println(err)
 		return
 	}
-	d, err := read(conn)
+	d, err = read(conn)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 	fmt.Printf("%s\n", d)
 
-	// TODO: might be wrong password log page
-
-	if err = conn.Close(); err != nil {
+	if err = send(conn, []byte("eeeeee\rY\r")); err != nil {
 		fmt.Println(err)
 		return
+	}
+	for {
+		d, err = read(conn)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		fmt.Printf("%s\n", d)
+
+		if bytes.Contains(d, []byte("按任意鍵繼續")) {
+			err := send(conn, []byte(" "))
+			panic(err)
+		}
 	}
 }
