@@ -13,6 +13,8 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
+	"time"
 )
 
 // keep websocket reading until message size less than 1024
@@ -34,7 +36,7 @@ func read(conn net.Conn) ([]byte, error) {
 			break
 		}
 	}
-	return all, nil
+	return cleanData(all), nil
 }
 
 func send(conn net.Conn, data []byte) error {
@@ -46,11 +48,49 @@ func send(conn net.Conn, data []byte) error {
 	return nil
 }
 
+func cleanData(data []byte) []byte {
+	// Replace ANSI escape sequences with =ESC=.
+	data = regexp.MustCompile(`\x1B`).ReplaceAll(data, nil)
+
+	// Remove any remaining ANSI escape codes.
+	data = regexp.MustCompile(`\[[\d+;]*m`).ReplaceAll(data, nil)
+
+	// Remove carriage returns.
+	data = bytes.ReplaceAll(data, []byte{'\r'}, nil)
+
+	// Remove backspaces.
+	for bytes.Contains(data, []byte{' ', '\x08'}) {
+		data = bytes.ReplaceAll(data, []byte{' ', '\x08'}, nil)
+	}
+
+	// remove [H [K
+	data = bytes.ReplaceAll(data, []byte("[K"), nil)
+	data = bytes.ReplaceAll(data, []byte("[H"), nil)
+
+	return data
+}
+
 func init() {
 	if err := godotenv.Load(); err != nil {
 		panic(err)
 		return
 	}
+}
+
+type Message struct {
+	Time    time.Time
+	Message string
+	User    string
+}
+
+func (m *Message) Equal(input *Message) bool {
+	return m.User == input.User && m.Time.Equal(input.Time) && m.Message == input.Message
+}
+
+func (m *Message) Null() bool {
+	fmt.Println(m.User)
+	fmt.Println(m.User == "")
+	return m.User == ""
 }
 
 func main() {
@@ -103,7 +143,7 @@ func main() {
 			}
 		} else if bytes.Contains(d, []byte("密碼不對")) {
 			panic("wrong password")
-		} else if bytes.Contains(d, []byte("請按任意鍵繼續")) {
+		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err = send(conn, []byte(" "))
 			if err != nil {
 				fmt.Println(err)
@@ -172,13 +212,13 @@ func main() {
 		}
 	}
 
-	articleId := []byte(os.Getenv("article") + "\r\r")
+	articleId := []byte(os.Getenv("article") + "\r")
 	for i := range articleId {
 		if err = send(conn, articleId[i:i+1]); err != nil {
 			fmt.Println(err)
 			return
 		}
-		d, err := read(conn)
+		d, err = read(conn)
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -186,18 +226,54 @@ func main() {
 		fmt.Printf("%s\n", d)
 	}
 
-	cc := []byte("G\b\b")
-	for i := range cc {
-		if err = send(conn, cc[i:i+1]); err != nil {
+	var lastMessage *Message
+	for {
+		if err = send(conn, []byte("\rG")); err != nil {
 			fmt.Println(err)
 			return
 		}
-		d, err := read(conn)
+		d, err = read(conn)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
-		fmt.Printf("%s\n", d)
+
+		// parse line by line
+		lines := bytes.Split(d, []byte("\n"))
+
+		lastLineNum := len(lines) - 2
+		messages := make([]Message, 0)
+		for i := lastLineNum; i >= 0; i-- {
+			message, err := parseMessage(lines[i])
+			if err != nil {
+				fmt.Printf("parse message err: %s\n", err)
+				break
+			}
+			if lastMessage != nil && (message.Equal(lastMessage) || message.Time.Before(lastMessage.Time)) {
+				break
+			}
+			messages = append(messages, *message)
+		}
+
+		if len(messages) > 0 {
+			lastMessage = &messages[0]
+		}
+		for i := len(messages) - 1; i >= 0; i-- {
+			message := messages[i]
+			fmt.Printf("%s: %s %s\n", message.User, message.Message, message.Time)
+		}
+
+		time.Sleep(1 * time.Second)
+
+		if err = send(conn, []byte("q")); err != nil {
+			fmt.Println(err)
+			return
+		}
+		d, err = read(conn)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 	}
 
 	if err = send(conn, []byte("qeeeeee\rY\r")); err != nil {
@@ -210,7 +286,6 @@ func main() {
 			fmt.Println(err)
 			return
 		}
-		fmt.Printf("%s\n", d)
 
 		if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err := send(conn, []byte(" "))
@@ -219,4 +294,21 @@ func main() {
 			}
 		}
 	}
+}
+
+func parseMessage(l []byte) (*Message, error) {
+	date := l[len(l)-11:]
+	t, err := time.Parse("01/02 15:04", string(date))
+	if err != nil {
+		fmt.Printf("parse time error %s \n", err)
+		return nil, err
+	}
+	space := bytes.Index(l, []byte(" "))
+	colon := bytes.Index(l, []byte(":"))
+	id := l[space+1 : colon]
+	return &Message{
+		Time:    t,
+		User:    string(id),
+		Message: string(l[colon+2 : len(l)-11]),
+	}, nil
 }
