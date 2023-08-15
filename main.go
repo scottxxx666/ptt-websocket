@@ -4,71 +4,16 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/gobwas/ws"
-	"github.com/gobwas/ws/wsutil"
 	"github.com/joho/godotenv"
 	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 	"io"
-	"net"
 	"net/http"
+	"nhooyr.io/websocket"
 	"os"
 	"regexp"
 	"time"
 )
-
-// keep websocket reading until message size less than 1024
-func read(conn net.Conn) ([]byte, error) {
-	var all []byte
-	for {
-		data, _, err := wsutil.ReadServerData(conn)
-		if err != nil {
-			return nil, err
-		}
-		reader := transform.NewReader(bytes.NewBuffer(data), traditionalchinese.Big5.NewDecoder())
-		big5, err := io.ReadAll(reader)
-		if err != nil {
-			return nil, err
-		}
-		// append big5 to all
-		all = append(all, big5...)
-		if len(data) < 1024 {
-			break
-		}
-	}
-	return cleanData(all), nil
-}
-
-func send(conn net.Conn, data []byte) error {
-	err := wsutil.WriteClientMessage(conn, ws.OpBinary, data)
-	if err != nil {
-		fmt.Println("send fail")
-		return err
-	}
-	return nil
-}
-
-func cleanData(data []byte) []byte {
-	// Replace ANSI escape sequences with =ESC=.
-	data = regexp.MustCompile(`\x1B`).ReplaceAll(data, nil)
-
-	// Remove any remaining ANSI escape codes.
-	data = regexp.MustCompile(`\[[\d+;]*m`).ReplaceAll(data, nil)
-
-	// Remove carriage returns.
-	data = bytes.ReplaceAll(data, []byte{'\r'}, nil)
-
-	// Remove backspaces.
-	for bytes.Contains(data, []byte{' ', '\x08'}) {
-		data = bytes.ReplaceAll(data, []byte{' ', '\x08'}, nil)
-	}
-
-	// remove [H [K
-	data = bytes.ReplaceAll(data, []byte("[K"), nil)
-	data = bytes.ReplaceAll(data, []byte("[H"), nil)
-
-	return data
-}
 
 func init() {
 	if err := godotenv.Load(); err != nil {
@@ -94,16 +39,25 @@ func (m *Message) Null() bool {
 }
 
 func main() {
-	dialer := ws.DefaultDialer
-	dialer.Header = ws.HandshakeHeaderHTTP(http.Header{"Origin": []string{"https://term.ptt.cc"}})
-	conn, _, _, err := dialer.Dial(context.Background(), "wss://ws.ptt.cc/bbs")
+	PollingMessages(os.Getenv("account"), os.Getenv("password"), true, os.Getenv("board"), os.Getenv("article"))
+}
+
+
+func logError(e error, msg string) {
+	fmt.Println(msg, e)
+}
+
+func PollingMessages(account string, password string, revokeOthers bool, board string, article string) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	// conn, _, err := websocket.Dial(ctx, "wss://ws.ptt.cc/bbs", nil)
+	conn, _, err := websocket.Dial(ctx, "wss://ws.ptt.cc/bbs", &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{"https://term.ptt.cc"}}})
 	if err != nil {
-		fmt.Println("connect fail")
-		fmt.Println(err)
+		logError(err, "connect websocket error")
 		return
 	}
-
-	defer conn.Close()
+	defer conn.Close(websocket.StatusInternalError, "the sky is falling")
 
 	for {
 		d, err := read(conn)
@@ -116,9 +70,9 @@ func main() {
 
 		if bytes.Contains(d, []byte("請輸入代號")) {
 			fmt.Println("send account")
-			account := []byte(os.Getenv("account"))
-			for i := range account {
-				err = send(conn, account[i:i+1])
+			accountByte := []byte(account)
+			for i := range accountByte {
+				err = send(conn, accountByte[i:i+1])
 				if err != nil {
 					fmt.Println(err)
 					return
@@ -134,9 +88,9 @@ func main() {
 				return
 			}
 		} else if bytes.Contains(d, []byte("請輸入您的密碼")) {
-			password := []byte(os.Getenv("password") + "\r")
-			for i := range password {
-				if err = send(conn, password[i:i+1]); err != nil {
+			passwordByte := []byte(password + "\r")
+			for i := range passwordByte {
+				if err = send(conn, passwordByte[i:i+1]); err != nil {
 					fmt.Println(err)
 					return
 				}
@@ -150,7 +104,11 @@ func main() {
 				return
 			}
 		} else if bytes.Contains(d, []byte("您想刪除其他重複登入的連線嗎")) {
-			err = send(conn, []byte(os.Getenv("revokeOthers")+"\r"))
+			revoke := "N"
+			if revokeOthers {
+				revoke = "Y"
+			}
+			err = send(conn, []byte(revoke+"\r"))
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -172,7 +130,7 @@ func main() {
 	}
 	fmt.Printf("%s\n", d)
 
-	searchBoard := []byte(os.Getenv("board"))
+	searchBoard := []byte(board)
 	for i := range searchBoard {
 		if err = send(conn, searchBoard[i:i+1]); err != nil {
 			fmt.Println(err)
@@ -212,7 +170,7 @@ func main() {
 		}
 	}
 
-	articleId := []byte(os.Getenv("article") + "\r")
+	articleId := []byte(article + "\r")
 	for i := range articleId {
 		if err = send(conn, articleId[i:i+1]); err != nil {
 			fmt.Println(err)
@@ -276,24 +234,51 @@ func main() {
 		}
 	}
 
-	if err = send(conn, []byte("qeeeeee\rY\r")); err != nil {
-		fmt.Println(err)
-		return
-	}
-	for {
-		d, err = read(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+	conn.Close(websocket.StatusNormalClosure, "")
+}
 
-		if bytes.Contains(d, []byte("按任意鍵繼續")) {
-			err := send(conn, []byte(" "))
-			if err != nil {
-				panic(err)
-			}
+// keep websocket reading until message size less than 1024
+func read(conn *websocket.Conn) ([]byte, error) {
+	var all []byte
+	for {
+		_, data, err := conn.Read(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		reader := transform.NewReader(bytes.NewBuffer(data), traditionalchinese.Big5.NewDecoder())
+		big5, err := io.ReadAll(reader)
+		if err != nil {
+			return nil, err
+		}
+		// append big5 to all
+		all = append(all, big5...)
+		if len(data) < 1024 {
+			break
 		}
 	}
+	return cleanData(all), nil
+}
+
+func cleanData(data []byte) []byte {
+	// Replace ANSI escape sequences with =ESC=.
+	data = regexp.MustCompile(`\x1B`).ReplaceAll(data, nil)
+
+	// Remove any remaining ANSI escape codes.
+	data = regexp.MustCompile(`\[[\d+;]*m`).ReplaceAll(data, nil)
+
+	// Remove carriage returns.
+	data = bytes.ReplaceAll(data, []byte{'\r'}, nil)
+
+	// Remove backspaces.
+	for bytes.Contains(data, []byte{' ', '\x08'}) {
+		data = bytes.ReplaceAll(data, []byte{' ', '\x08'}, nil)
+	}
+
+	// remove [H [K
+	data = bytes.ReplaceAll(data, []byte("[K"), nil)
+	data = bytes.ReplaceAll(data, []byte("[H"), nil)
+
+	return data
 }
 
 func parseMessage(l []byte) (*Message, error) {
@@ -311,4 +296,13 @@ func parseMessage(l []byte) (*Message, error) {
 		User:    string(id),
 		Message: string(l[colon+2 : len(l)-11]),
 	}, nil
+}
+
+func send(c *websocket.Conn, data []byte) error {
+	err := c.Write(context.Background(), websocket.MessageBinary, data)
+	if err != nil {
+		logError(err, "send fail")
+		return err
+	}
+	return nil
 }
