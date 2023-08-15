@@ -3,29 +3,21 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
-	"github.com/joho/godotenv"
 	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 	"io"
-	"net/http"
 	"nhooyr.io/websocket"
-	"os"
 	"regexp"
+	"syscall/js"
 	"time"
 )
 
-func init() {
-	if err := godotenv.Load(); err != nil {
-		panic(err)
-		return
-	}
-}
-
 type Message struct {
-	Time    time.Time
-	Message string
-	User    string
+	Time    time.Time `json:"time"`
+	Message string    `json:"message"`
+	User    string    `json:"user"`
 }
 
 func (m *Message) Equal(input *Message) bool {
@@ -39,20 +31,25 @@ func (m *Message) Null() bool {
 }
 
 func main() {
-	PollingMessages(os.Getenv("account"), os.Getenv("password"), true, os.Getenv("board"), os.Getenv("article"))
+	done := make(chan int, 0)
+	js.Global().Set("pollingMessages", js.FuncOf(PollingMessagesJs))
+	<-done
 }
 
+func PollingMessagesJs(this js.Value, args []js.Value) interface{} {
+	go PollingMessages(args[0].String(), args[1].String(), args[2].Bool(), args[3].String(), args[4].String(), args[5])
+	return nil
+}
 
 func logError(e error, msg string) {
 	fmt.Println(msg, e)
 }
 
-func PollingMessages(account string, password string, revokeOthers bool, board string, article string) {
+func PollingMessages(account string, password string, revokeOthers bool, board string, article string, callback js.Value) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	// conn, _, err := websocket.Dial(ctx, "wss://ws.ptt.cc/bbs", nil)
-	conn, _, err := websocket.Dial(ctx, "wss://ws.ptt.cc/bbs", &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{"https://term.ptt.cc"}}})
+	conn, _, err := websocket.Dial(ctx, "wss://ws.ptt.cc/bbs", nil)
 	if err != nil {
 		logError(err, "connect websocket error")
 		return
@@ -216,10 +213,13 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 		if len(messages) > 0 {
 			lastMessage = &messages[0]
 		}
-		for i := len(messages) - 1; i >= 0; i-- {
-			message := messages[i]
-			fmt.Printf("%s: %s %s\n", message.User, message.Message, message.Time)
+
+		json, err := json.Marshal(messages)
+		if err != nil {
+			logError(err, "marshal json failed")
+			return
 		}
+		callback.Invoke(string(json))
 
 		time.Sleep(1 * time.Second)
 
