@@ -97,7 +97,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 					return
 				}
 			}
-		} else if bytes.Contains(d, []byte("密碼不對")) {
+		} else if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
 			panic("wrong password")
 		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err = send(conn, []byte(" "))
@@ -111,6 +111,12 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 				revoke = "Y"
 			}
 			err = send(conn, []byte(revoke+"\r"))
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+		} else if bytes.Contains(d, []byte("您要刪除以上錯誤嘗試的記錄嗎?")) {
+			err = send(conn, []byte("n\r"))
 			if err != nil {
 				fmt.Println(err)
 				return
@@ -193,6 +199,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 			return
 		}
 
+		fmt.Printf("screen: %s\n", d)
 		// parse line by line
 		lines := bytes.Split(d, []byte("\n"))
 
