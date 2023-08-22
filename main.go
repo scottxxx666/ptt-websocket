@@ -120,45 +120,58 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 		}
 	}
 
-	searchBoardCmd := []byte("s")
-	if err = send(conn, searchBoardCmd); err != nil {
-		fmt.Println(err)
-		return
-	}
-	d, err := read(conn)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Printf("%s\n", d)
-
-	searchBoard := []byte(board)
-	for i := range searchBoard {
-		if err = send(conn, searchBoard[i:i+1]); err != nil {
-			fmt.Println(err)
-			return
-		}
-		_, err := read(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Printf("%s\n", d)
-	}
-
-	if err = send(conn, []byte("\r")); err != nil {
-		fmt.Println(err)
-		return
-	}
+	var lastMessage *Message
 	for {
-		d, err = read(conn)
+		searchBoardCmd := []byte("s")
+		if err = send(conn, searchBoardCmd); err != nil {
+			fmt.Println(err)
+			return
+		}
+		d, err := read(conn)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		fmt.Printf("%s\n", d)
-		if bytes.Contains(d, []byte("按任意鍵繼續")) {
+
+		searchBoard := []byte(board)
+		for i := range searchBoard {
+			if err = send(conn, searchBoard[i:i+1]); err != nil {
+				fmt.Println(err)
+				return
+			}
+			_, err := read(conn)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Printf("%s\n", d)
+		}
+
+		if err = send(conn, []byte("\r")); err != nil {
+			fmt.Println(err)
+			return
+		}
+		for {
+			d, err = read(conn)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Printf("%s\n", d)
+			if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
+				!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
+				break
+			}
 			if err = send(conn, []byte(" ")); err != nil {
+				fmt.Println(err)
+				return
+			}
+		}
+
+		articleId := []byte(article + "\r")
+		for i := range articleId {
+			if err = send(conn, articleId[i:i+1]); err != nil {
 				fmt.Println(err)
 				return
 			}
@@ -168,26 +181,8 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 				return
 			}
 			fmt.Printf("%s\n", d)
-			break
 		}
-	}
 
-	articleId := []byte(article + "\r")
-	for i := range articleId {
-		if err = send(conn, articleId[i:i+1]); err != nil {
-			fmt.Println(err)
-			return
-		}
-		d, err = read(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Printf("%s\n", d)
-	}
-
-	var lastMessage *Message
-	for {
 		if err = send(conn, []byte("\rG")); err != nil {
 			fmt.Println(err)
 			return
@@ -225,16 +220,6 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 		}
 
 		time.Sleep(1 * time.Second)
-
-		if err = send(conn, []byte("q")); err != nil {
-			fmt.Println(err)
-			return
-		}
-		d, err = read(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
 	}
 
 	conn.Close(websocket.StatusNormalClosure, "")
