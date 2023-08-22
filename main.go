@@ -8,6 +8,7 @@ import (
 	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 	"io"
+	"math"
 	"nhooyr.io/websocket"
 	"regexp"
 	"syscall/js"
@@ -15,6 +16,7 @@ import (
 )
 
 type Message struct {
+	Id      int32     `json:"id"`
 	Time    time.Time `json:"time"`
 	Message string    `json:"message"`
 	User    string    `json:"user"`
@@ -56,6 +58,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	}
 	defer conn.Close(websocket.StatusInternalError, "the sky is falling")
 
+	var msgId int32 = 1
 	for {
 		d, err := read(conn)
 		if err != nil {
@@ -92,7 +95,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 					return
 				}
 			}
-		} else if bytes.Contains(d, []byte("密碼不對")) {
+		} else if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
 			panic("wrong password")
 		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err = send(conn, []byte(" "))
@@ -110,50 +113,69 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 				fmt.Println(err)
 				return
 			}
+		} else if bytes.Contains(d, []byte("您要刪除以上錯誤嘗試的記錄嗎?")) {
+			err = send(conn, []byte("n\r"))
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
 		} else if bytes.Contains(d, []byte("【主功能表】")) {
 			break
 		}
 	}
 
-	searchBoardCmd := []byte("s")
-	if err = send(conn, searchBoardCmd); err != nil {
-		fmt.Println(err)
-		return
-	}
-	d, err := read(conn)
-	if err != nil {
-		fmt.Println(err)
-		return
-	}
-	fmt.Printf("%s\n", d)
-
-	searchBoard := []byte(board)
-	for i := range searchBoard {
-		if err = send(conn, searchBoard[i:i+1]); err != nil {
-			fmt.Println(err)
-			return
-		}
-		_, err := read(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Printf("%s\n", d)
-	}
-
-	if err = send(conn, []byte("\r")); err != nil {
-		fmt.Println(err)
-		return
-	}
+	var lastMessage *Message
 	for {
-		d, err = read(conn)
+		searchBoardCmd := []byte("s")
+		if err = send(conn, searchBoardCmd); err != nil {
+			fmt.Println(err)
+			return
+		}
+		d, err := read(conn)
 		if err != nil {
 			fmt.Println(err)
 			return
 		}
 		fmt.Printf("%s\n", d)
-		if bytes.Contains(d, []byte("按任意鍵繼續")) {
+
+		searchBoard := []byte(board)
+		for i := range searchBoard {
+			if err = send(conn, searchBoard[i:i+1]); err != nil {
+				fmt.Println(err)
+				return
+			}
+			_, err := read(conn)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Printf("%s\n", d)
+		}
+
+		if err = send(conn, []byte("\r")); err != nil {
+			fmt.Println(err)
+			return
+		}
+		for {
+			d, err = read(conn)
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			fmt.Printf("%s\n", d)
+			if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
+				!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
+				break
+			}
 			if err = send(conn, []byte(" ")); err != nil {
+				fmt.Println(err)
+				return
+			}
+		}
+
+		articleId := []byte(article + "\r")
+		for i := range articleId {
+			if err = send(conn, articleId[i:i+1]); err != nil {
 				fmt.Println(err)
 				return
 			}
@@ -163,26 +185,11 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 				return
 			}
 			fmt.Printf("%s\n", d)
-			break
 		}
-	}
+		if bytes.Contains(d, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
+			panic("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")
+		}
 
-	articleId := []byte(article + "\r")
-	for i := range articleId {
-		if err = send(conn, articleId[i:i+1]); err != nil {
-			fmt.Println(err)
-			return
-		}
-		d, err = read(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		fmt.Printf("%s\n", d)
-	}
-
-	var lastMessage *Message
-	for {
 		if err = send(conn, []byte("\rG")); err != nil {
 			fmt.Println(err)
 			return
@@ -193,13 +200,15 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 			return
 		}
 
+		fmt.Printf("screen: %s\n", d)
 		// parse line by line
 		lines := bytes.Split(d, []byte("\n"))
 
 		lastLineNum := len(lines) - 2
 		messages := make([]Message, 0)
 		for i := lastLineNum; i >= 0; i-- {
-			message, err := parseMessage(lines[i])
+			message, err := parseMessage(lines[i], msgId)
+			msgId = (msgId + 1) % math.MaxInt32
 			if err != nil {
 				fmt.Printf("parse message err: %s\n", err)
 				break
@@ -222,16 +231,6 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 		callback.Invoke(string(json))
 
 		time.Sleep(1 * time.Second)
-
-		if err = send(conn, []byte("q")); err != nil {
-			fmt.Println(err)
-			return
-		}
-		d, err = read(conn)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
 	}
 
 	conn.Close(websocket.StatusNormalClosure, "")
@@ -281,20 +280,22 @@ func cleanData(data []byte) []byte {
 	return data
 }
 
-func parseMessage(l []byte) (*Message, error) {
+func parseMessage(l []byte, i int32) (*Message, error) {
+	fmt.Printf("line: %s\n", l)
 	date := l[len(l)-11:]
 	t, err := time.Parse("01/02 15:04", string(date))
 	if err != nil {
 		fmt.Printf("parse time error %s \n", err)
-		return nil, err
+		t = time.Now()
 	}
 	space := bytes.Index(l, []byte(" "))
 	colon := bytes.Index(l, []byte(":"))
-	id := l[space+1 : colon]
+	user := l[space+1 : colon]
 	return &Message{
+		Id:      i,
 		Time:    t,
-		User:    string(id),
-		Message: string(l[colon+2 : len(l)-11]),
+		User:    string(bytes.TrimRight(user, " ")),
+		Message: string(bytes.TrimRight(l[colon+2:len(l)-11], " ")),
 	}, nil
 }
 
