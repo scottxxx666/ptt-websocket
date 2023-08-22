@@ -8,6 +8,7 @@ import (
 	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 	"io"
+	"math"
 	"net/http"
 	"nhooyr.io/websocket"
 	"os"
@@ -23,9 +24,10 @@ func init() {
 }
 
 type Message struct {
-	Time    time.Time
-	Message string
-	User    string
+	Id      int32     `json:"id"`
+	Time    time.Time `json:"time"`
+	Message string    `json:"message"`
+	User    string    `json:"user"`
 }
 
 func (m *Message) Equal(input *Message) bool {
@@ -41,7 +43,6 @@ func (m *Message) Null() bool {
 func main() {
 	PollingMessages(os.Getenv("account"), os.Getenv("password"), true, os.Getenv("board"), os.Getenv("article"))
 }
-
 
 func logError(e error, msg string) {
 	fmt.Println(msg, e)
@@ -59,6 +60,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	}
 	defer conn.Close(websocket.StatusInternalError, "the sky is falling")
 
+	var msgId int32 = 1
 	for {
 		d, err := read(conn)
 		if err != nil {
@@ -202,7 +204,8 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 		lastLineNum := len(lines) - 2
 		messages := make([]Message, 0)
 		for i := lastLineNum; i >= 0; i-- {
-			message, err := parseMessage(lines[i])
+			message, err := parseMessage(lines[i], msgId)
+			msgId = (msgId + 1) % math.MaxInt32
 			if err != nil {
 				fmt.Printf("parse message err: %s\n", err)
 				break
@@ -281,20 +284,22 @@ func cleanData(data []byte) []byte {
 	return data
 }
 
-func parseMessage(l []byte) (*Message, error) {
+func parseMessage(l []byte, i int32) (*Message, error) {
+	fmt.Printf("line: %s\n", l)
 	date := l[len(l)-11:]
 	t, err := time.Parse("01/02 15:04", string(date))
 	if err != nil {
 		fmt.Printf("parse time error %s \n", err)
-		return nil, err
+		t = time.Now()
 	}
 	space := bytes.Index(l, []byte(" "))
 	colon := bytes.Index(l, []byte(":"))
-	id := l[space+1 : colon]
+	user := l[space+1 : colon]
 	return &Message{
+		Id:      i,
 		Time:    t,
-		User:    string(id),
-		Message: string(l[colon+2 : len(l)-11]),
+		User:    string(bytes.TrimRight(user, " ")),
+		Message: string(bytes.TrimRight(l[colon+2:len(l)-11], " ")),
 	}, nil
 }
 
