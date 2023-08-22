@@ -188,6 +188,9 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 			}
 			fmt.Printf("%s\n", d)
 		}
+		if bytes.Contains(d, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
+			panic("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")
+		}
 
 		if err = send(conn, []byte("\rG")); err != nil {
 			fmt.Println(err)
