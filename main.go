@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/joho/godotenv"
 	"os"
@@ -36,12 +37,17 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 
 	err = ptt.Login(account, password, revokeOthers)
 	if err != nil {
-		fmt.Println(err)
+		if errors.Is(err, AuthError) {
+			fmt.Println("密碼不對或無此帳號")
+		}
 		return
 	}
 
 	err = ptt.PullMessages(board, article)
 	if err != nil {
+		if errors.Is(err, WrongArticleIdError) {
+			fmt.Println("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")
+		}
 		return
 	}
 }

@@ -15,6 +15,9 @@ import (
 	"time"
 )
 
+var WrongArticleIdError = errors.New("wrong article id")
+var AuthError = errors.New("auth fail")
+
 type Message struct {
 	Id      int32     `json:"id"`
 	Time    time.Time `json:"time"`
@@ -66,7 +69,7 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 		fmt.Printf("%s\n", d)
 
 		if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
-			panic("wrong password")
+			return AuthError
 		} else if bytes.Contains(d, []byte("請輸入代號")) {
 			fmt.Println("send account")
 			accountByte := []byte(account)
@@ -190,7 +193,7 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 			fmt.Printf("%s\n", d)
 		}
 		if bytes.Contains(d, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
-			return errors.New("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")
+			return WrongArticleIdError
 		}
 
 		if err = send(ptt.conn, []byte("\rG")); err != nil {
