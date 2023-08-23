@@ -70,7 +70,9 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 		}
 		fmt.Printf("%s\n", d)
 
-		if bytes.Contains(d, []byte("請輸入代號")) {
+		if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
+			panic("wrong password")
+		} else if bytes.Contains(d, []byte("請輸入代號")) {
 			fmt.Println("send account")
 			accountByte := []byte(account)
 			for i := range accountByte {
@@ -97,8 +99,6 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 					return
 				}
 			}
-		} else if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
-			panic("wrong password")
 		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err = send(conn, []byte(" "))
 			if err != nil {
