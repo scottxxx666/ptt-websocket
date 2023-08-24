@@ -208,6 +208,8 @@ func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
 }
 
 func (ptt *PttClient) PushMessage(message string) error {
+	ptt.lock.Lock()
+	defer ptt.lock.Unlock()
 	if err := send(ptt.conn, []byte("X")); err != nil {
 		logError("send push command", err)
 		return err
