@@ -18,9 +18,9 @@ func init() {
 }
 
 func main() {
-	// PollingMessages(os.Getenv("account"), os.Getenv("password"), false, os.Getenv("board"), os.Getenv("article"))
+	PollingMessages(os.Getenv("account"), os.Getenv("password"), false, os.Getenv("board"), os.Getenv("article"))
 	// PushMessage(os.Getenv("account"), os.Getenv("password"), os.Getenv("board"), os.Getenv("article"), "你好ㄚ1c!@#$%^&*()")
-	TryPushAndPull(os.Getenv("account"), os.Getenv("password"), false, os.Getenv("board"), os.Getenv("article"))
+	// TryPushAndPull(os.Getenv("account"), os.Getenv("password"), false, os.Getenv("board"), os.Getenv("article"))
 }
 
 func TryPushAndPull(account string, password string, revoke bool, board string, article string) {
