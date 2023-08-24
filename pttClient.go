@@ -150,23 +150,24 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 		}
 
 		fmt.Printf("screen: %s\n", page)
-		messages := ptt.parsePageMessages(page, msgId, lastMessage)
+		var messages []Message
+		messages, msgId = ptt.parsePageMessages(page, msgId, lastMessage)
+		ptt.lock.Unlock()
+		if len(messages) > 0 {
+			lastMessage = &messages[0]
+		}
 		json, err := json.Marshal(messages)
 		if err != nil {
 			logError("marshal json failed", err)
 			return err
 		}
-		if len(messages) > 0 {
-			lastMessage = &messages[0]
-		}
 		callback.Invoke(string(json))
-		ptt.lock.Unlock()
 
 		time.Sleep(1 * time.Second)
 	}
 }
 
-func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *Message) []Message {
+func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *Message) ([]Message, int32) {
 	lines := bytes.Split(page, []byte("\n"))
 
 	lastLineNum := len(lines) - 2
@@ -190,7 +191,7 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 		messages = append(messages, *message)
 	}
 
-	return messages
+	return messages, msgId
 }
 
 func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
