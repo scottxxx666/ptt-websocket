@@ -154,6 +154,9 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 			message := messages[i]
 			fmt.Printf("%s: %s %s\n", message.User, message.Message, message.Time)
 		}
+		if len(messages) > 0 {
+			lastMessage = &messages[0]
+		}
 		ptt.lock.Unlock()
 
 		time.Sleep(1 * time.Second)
@@ -184,9 +187,6 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 		messages = append(messages, *message)
 	}
 
-	if len(messages) > 0 {
-		lastMessage = &messages[0]
-	}
 	return messages
 }
 
