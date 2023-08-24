@@ -134,120 +134,22 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 	var msgId int32 = 1
 	for {
 		ptt.lock.Lock()
-		searchBoardCmd := []byte("s")
-		err := send(ptt.conn, searchBoardCmd)
+		err := ptt.EnterBoard(board)
 		if err != nil {
-			logError("send search board command", err)
 			return err
 		}
-		d, err := read(ptt.conn)
+
+		page, err := ptt.EnterArticle(article)
 		if err != nil {
-			fmt.Println(err)
 			return err
 		}
-		fmt.Printf("%s\n", d)
-
-		searchBoard := []byte(board)
-		for i := range searchBoard {
-			if err = send(ptt.conn, searchBoard[i:i+1]); err != nil {
-				logError("send search board name", err)
-				return err
-			}
-			_, err = read(ptt.conn)
-			if err != nil {
-				logError("read search board name", err)
-				return err
-			}
-			fmt.Printf("%s\n", d)
-		}
-
-		if err = send(ptt.conn, []byte("\r")); err != nil {
-			logError("send enter after search board", err)
-			return err
-		}
-		for {
-			d, err = read(ptt.conn)
-			if err != nil {
-				logError("read after enter board", err)
-				return err
-			}
-			fmt.Printf("%s\n", d)
-			if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
-				!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
-				break
-			}
-			if err = send(ptt.conn, []byte(" ")); err != nil {
-				logError("send after enter board", err)
-				return err
-			}
-		}
-
-		articleId := []byte(article + "\r")
-		for i := range articleId {
-			if err = send(ptt.conn, articleId[i:i+1]); err != nil {
-				logError("send search article", err)
-				return err
-			}
-			d, err = read(ptt.conn)
-			if err != nil {
-				logError("read search article", err)
-				return err
-			}
-			fmt.Printf("%s\n", d)
-		}
-		if bytes.Contains(d, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
-			return WrongArticleIdError
-		}
-
-		if err = send(ptt.conn, []byte("\r")); err != nil {
-			logError("send article bottom command", err)
-			return err
-		}
-		d, err = read(ptt.conn)
+		page, err = ptt.pageEnd(page)
 		if err != nil {
-			logError("read article bottom", err)
 			return err
 		}
-		if !bytes.Contains(d, []byte("頁 (100%)  目前顯示")) {
-			if err = send(ptt.conn, []byte("G")); err != nil {
-				logError("send article bottom command", err)
-				return err
-			}
-			d, err = read(ptt.conn)
-			if err != nil {
-				logError("read article bottom", err)
-				return err
-			}
-		}
 
-		fmt.Printf("screen: %s\n", d)
-		// parse line by line
-		lines := bytes.Split(d, []byte("\n"))
-
-		lastLineNum := len(lines) - 2
-		messages := make([]Message, 0)
-		for i := lastLineNum; i >= 0; i-- {
-			if len(lines[i]) == 0 {
-				continue
-			}
-			if bytes.Contains(lines[i], []byte("※ 文章網址:")) || bytes.Contains(lines[i], []byte("※ 發信站:")) {
-				break
-			}
-			message, err := parseMessage(lines[i], msgId)
-			msgId = (msgId + 1) % math.MaxInt32
-			if err != nil {
-				logError("parse message error", err)
-				break
-			}
-			if lastMessage != nil && (message.Equal(lastMessage) || message.Time.Before(lastMessage.Time)) {
-				break
-			}
-			messages = append(messages, *message)
-		}
-
-		if len(messages) > 0 {
-			lastMessage = &messages[0]
-		}
+		fmt.Printf("screen: %s\n", page)
+		messages := ptt.parsePageMessages(page, msgId, lastMessage)
 		for i := len(messages) - 1; i >= 0; i-- {
 			message := messages[i]
 			fmt.Printf("%s: %s %s\n", message.User, message.Message, message.Time)
@@ -258,78 +160,59 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 	}
 }
 
-func (ptt *PttClient) PushMessage(board string, article string, message string) error {
-	ptt.lock.Lock()
-	searchBoardCmd := []byte("s")
-	err := send(ptt.conn, searchBoardCmd)
-	if err != nil {
-		logError("send search board command", err)
-		return err
-	}
-	d, err := read(ptt.conn)
-	if err != nil {
-		fmt.Println(err)
-		return err
-	}
-	fmt.Printf("%s\n", d)
+func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *Message) []Message {
+	lines := bytes.Split(page, []byte("\n"))
 
-	searchBoard := []byte(board)
-	for i := range searchBoard {
-		if err = send(ptt.conn, searchBoard[i:i+1]); err != nil {
-			logError("send search board name", err)
-			return err
+	lastLineNum := len(lines) - 2
+	messages := make([]Message, 0)
+	for i := lastLineNum; i >= 0; i-- {
+		if len(lines[i]) == 0 {
+			continue
 		}
-		_, err = read(ptt.conn)
-		if err != nil {
-			logError("read search board name", err)
-			return err
-		}
-		fmt.Printf("%s\n", d)
-	}
-
-	if err = send(ptt.conn, []byte("\r")); err != nil {
-		logError("send enter after search board", err)
-		return err
-	}
-	for {
-		d, err = read(ptt.conn)
-		if err != nil {
-			logError("read after enter board", err)
-			return err
-		}
-		fmt.Printf("%s\n", d)
-		if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
-			!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
+		if bytes.Contains(lines[i], []byte("※ 文章網址:")) || bytes.Contains(lines[i], []byte("※ 發信站:")) {
 			break
 		}
-		if err = send(ptt.conn, []byte(" ")); err != nil {
-			logError("send after enter board", err)
-			return err
-		}
-	}
-
-	articleId := []byte(article + "\r")
-	for i := range articleId {
-		if err = send(ptt.conn, articleId[i:i+1]); err != nil {
-			logError("send search article", err)
-			return err
-		}
-		d, err = read(ptt.conn)
+		message, err := parseMessage(lines[i], msgId)
+		msgId = (msgId + 1) % math.MaxInt32
 		if err != nil {
-			logError("read search article", err)
-			return err
+			logError("parse message error", err)
+			break
 		}
-		fmt.Printf("%s\n", d)
-	}
-	if bytes.Contains(d, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
-		return WrongArticleIdError
+		if lastMessage != nil && (message.Equal(lastMessage) || message.Time.Before(lastMessage.Time)) {
+			break
+		}
+		messages = append(messages, *message)
 	}
 
-	if err = send(ptt.conn, []byte("X")); err != nil {
+	if len(messages) > 0 {
+		lastMessage = &messages[0]
+	}
+	return messages
+}
+
+func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
+	if bytes.Contains(page, []byte("頁 (100%)  目前顯示")) {
+		return page, nil
+	}
+	err := send(ptt.conn, []byte("G"))
+	if err != nil {
+		logError("send article bottom command", err)
+		return nil, err
+	}
+	end, err := read(ptt.conn)
+	if err != nil {
+		logError("read article bottom", err)
+		return nil, err
+	}
+	return end, nil
+}
+
+func (ptt *PttClient) PushMessage(message string) error {
+	if err := send(ptt.conn, []byte("X")); err != nil {
 		logError("send push command", err)
 		return err
 	}
-	d, err = read(ptt.conn)
+	d, err := read(ptt.conn)
 	if err != nil {
 		logError("read push command", err)
 		return err
@@ -371,7 +254,87 @@ func (ptt *PttClient) PushMessage(board string, article string, message string) 
 		return err
 	}
 
-	ptt.lock.Unlock()
+	return nil
+}
+
+func (ptt *PttClient) EnterArticle(article string) (firstPage []byte, err error) {
+	var data []byte
+	articleId := []byte(article + "\r")
+	for i := range articleId {
+		if err = send(ptt.conn, articleId[i:i+1]); err != nil {
+			logError("send search article", err)
+			return nil, err
+		}
+		data, err = read(ptt.conn)
+		if err != nil {
+			logError("read search article", err)
+			return nil, err
+		}
+	}
+	if bytes.Contains(data, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
+		return nil, WrongArticleIdError
+	}
+
+	if err = send(ptt.conn, []byte("\r")); err != nil {
+		logError("send article enter command", err)
+		return nil, err
+	}
+	firstPage, err = read(ptt.conn)
+	if err != nil {
+		logError("read article bottom", err)
+		return nil, err
+	}
+	return firstPage, nil
+}
+
+func (ptt *PttClient) EnterBoard(board string) error {
+	searchBoardCmd := []byte("s")
+	err := send(ptt.conn, searchBoardCmd)
+	if err != nil {
+		logError("send search board command", err)
+		return err
+	}
+	d, err := read(ptt.conn)
+	if err != nil {
+		logError("read search board command", err)
+		return err
+	}
+	fmt.Printf("%s\n", d)
+
+	searchBoard := []byte(board)
+	for i := range searchBoard {
+		if err = send(ptt.conn, searchBoard[i:i+1]); err != nil {
+			logError("send search board name", err)
+			return err
+		}
+		_, err = read(ptt.conn)
+		if err != nil {
+			logError("read search board name", err)
+			return err
+		}
+		fmt.Printf("%s\n", d)
+	}
+
+	if err = send(ptt.conn, []byte("\r")); err != nil {
+		logError("send enter after search board", err)
+		return err
+	}
+	for {
+		d, err = read(ptt.conn)
+		if err != nil {
+			logError("read after enter board", err)
+			return err
+		}
+		fmt.Printf("%s\n", d)
+		if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
+			!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
+			break
+		}
+		if err = send(ptt.conn, []byte(" ")); err != nil {
+			logError("send after enter board", err)
+			return err
+		}
+	}
 	return nil
 }
 
