@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"syscall/js"
 	"time"
 )
@@ -40,10 +41,12 @@ func TryPushAndPull(account string, password string, revoke bool, board string, 
 		return
 	}
 
+	i := 1
 	go func() {
 		time.Sleep(3 * time.Second)
 		for {
-			err = ptt.PushMessage(board, article, time.Now().String())
+			err = ptt.PushMessage(strconv.Itoa(i))
+			i += 1
 			if err != nil {
 				fmt.Println(err)
 			}
@@ -85,7 +88,7 @@ func PushMessage(account string, password string, board string, article string, 
 		return
 	}
 
-	err = ptt.PushMessage(board, article, message)
+	err = ptt.PushMessage(message)
 	if err != nil {
 		fmt.Println(err)
 	}
