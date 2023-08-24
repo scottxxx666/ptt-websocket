@@ -150,6 +150,7 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 
 		fmt.Printf("screen: %s\n", page)
 		messages := ptt.parsePageMessages(page, msgId, lastMessage)
+		ptt.lock.Unlock()
 		for i := len(messages) - 1; i >= 0; i-- {
 			message := messages[i]
 			fmt.Printf("%s: %s %s\n", message.User, message.Message, message.Time)
@@ -157,7 +158,6 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 		if len(messages) > 0 {
 			lastMessage = &messages[0]
 		}
-		ptt.lock.Unlock()
 
 		time.Sleep(1 * time.Second)
 	}
