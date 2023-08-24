@@ -156,6 +156,9 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 			logError("marshal json failed", err)
 			return err
 		}
+		if len(messages) > 0 {
+			lastMessage = &messages[0]
+		}
 		callback.Invoke(string(json))
 		ptt.lock.Unlock()
 
@@ -187,9 +190,6 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 		messages = append(messages, *message)
 	}
 
-	if len(messages) > 0 {
-		lastMessage = &messages[0]
-	}
 	return messages
 }
 
