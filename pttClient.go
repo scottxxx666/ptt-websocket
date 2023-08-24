@@ -199,7 +199,7 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 			return WrongArticleIdError
 		}
 
-		if err = send(ptt.conn, []byte("\rG")); err != nil {
+		if err = send(ptt.conn, []byte("\r")); err != nil {
 			logError("send article bottom command", err)
 			return err
 		}
@@ -207,6 +207,17 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 		if err != nil {
 			logError("read article bottom", err)
 			return err
+		}
+		if !bytes.Contains(d, []byte("頁 (100%)  目前顯示")) {
+			if err = send(ptt.conn, []byte("G")); err != nil {
+				logError("send article bottom command", err)
+				return err
+			}
+			d, err = read(ptt.conn)
+			if err != nil {
+				logError("read article bottom", err)
+				return err
+			}
 		}
 
 		fmt.Printf("screen: %s\n", d)
@@ -216,6 +227,12 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 		lastLineNum := len(lines) - 2
 		messages := make([]Message, 0)
 		for i := lastLineNum; i >= 0; i-- {
+			if len(lines[i]) == 0 {
+				continue
+			}
+			if bytes.Contains(lines[i], []byte("※ 文章網址:")) || bytes.Contains(lines[i], []byte("※ 發信站:")) {
+				break
+			}
 			message, err := parseMessage(lines[i], msgId)
 			msgId = (msgId + 1) % math.MaxInt32
 			if err != nil {
