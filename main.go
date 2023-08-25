@@ -21,24 +21,20 @@ func PollingMessagesJs(this js.Value, args []js.Value) interface{} {
 	return nil
 }
 
-func PushMessage(message string) string {
+func PushMessagesJs(this js.Value, args []js.Value) interface{} {
+	go PushMessage(args[0].String(), args[1])
+	return nil
+}
+
+func PushMessage(message string, reject js.Value) {
 	if ptt == nil {
-		panic("not connect ptt yet")
+		reject.Invoke("尚未登入 PTT")
 	}
 	err := ptt.PushMessage(message)
 	if err != nil {
 		fmt.Println(err)
-		return "ERRR"
+		reject.Invoke("推文失敗")
 	}
-	return ""
-}
-
-func PushMessagesJs(this js.Value, args []js.Value) interface{} {
-	var res string
-	go func() {
-		res = PushMessage(args[0].String())
-	}()
-	return res
 }
 
 func logError(msg string, e error) {
@@ -55,6 +51,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	ptt = NewPttClient(ctx)
 	err := ptt.Connect()
 	if err != nil {
+		reject.Invoke("連線 PTT 失敗")
 		return
 	}
 	defer ptt.Close()
@@ -63,7 +60,9 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	if err != nil {
 		if errors.Is(err, AuthError) {
 			reject.Invoke("密碼不對或無此帳號")
+			return
 		}
+		reject.Invoke("登入失敗")
 		return
 	}
 
@@ -72,6 +71,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 		if errors.Is(err, WrongArticleIdError) {
 			reject.Invoke("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")
 		}
+		reject.Invoke("發生非預期的錯誤，請重試並確認資料填入正確")
 		return
 	}
 }
