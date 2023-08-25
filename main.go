@@ -18,6 +18,12 @@ func init() {
 }
 
 func main() {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("Recovered from ", r)
+		}
+	}()
+
 	PollingMessages(os.Getenv("account"), os.Getenv("password"), false, os.Getenv("board"), os.Getenv("article"))
 	// PushMessage(os.Getenv("account"), os.Getenv("password"), os.Getenv("board"), os.Getenv("article"), "你好ㄚ1c!@#$%^&*()")
 	// TryPushAndPull(os.Getenv("account"), os.Getenv("password"), false, os.Getenv("board"), os.Getenv("article"))
