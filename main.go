@@ -27,6 +27,13 @@ func PushMessagesJs(this js.Value, args []js.Value) interface{} {
 }
 
 func PushMessage(message string, reject js.Value) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			reject.Invoke(r)
+		}
+	}()
+
 	if ptt == nil {
 		reject.Invoke("尚未登入 PTT")
 	}
@@ -45,6 +52,13 @@ var ptt *PttClient
 
 func PollingMessages(account string, password string, revokeOthers bool, board string, article string,
 	callback js.Value, reject js.Value) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println(r)
+			reject.Invoke(r)
+		}
+	}()
+
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
