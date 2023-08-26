@@ -31,8 +31,6 @@ func (m *Message) Equal(input *Message) bool {
 }
 
 func (m *Message) Null() bool {
-	fmt.Println(m.User)
-	fmt.Println(m.User == "")
 	return m.User == ""
 }
 
@@ -68,12 +66,10 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 			logError("read fail", err)
 			return err
 		}
-		fmt.Printf("%s\n", d)
 
 		if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
 			return AuthError
 		} else if bytes.Contains(d, []byte("請輸入代號")) {
-			fmt.Println("send account")
 			accountByte := []byte(account)
 			for i := range accountByte {
 				err = send(ptt.conn, accountByte[i:i+1])
@@ -102,7 +98,6 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err = send(ptt.conn, []byte(" "))
 			if err != nil {
-				fmt.Println(err)
 				logError("send continue", err)
 				return err
 			}
@@ -316,7 +311,6 @@ func (ptt *PttClient) EnterBoard(board string) error {
 		logError("read search board command", err)
 		return err
 	}
-	fmt.Printf("%s\n", d)
 
 	searchBoard := []byte(board)
 	for i := range searchBoard {
@@ -329,7 +323,6 @@ func (ptt *PttClient) EnterBoard(board string) error {
 			logError("read search board name", err)
 			return err
 		}
-		fmt.Printf("%s\n", d)
 	}
 
 	if err = send(ptt.conn, []byte("\r")); err != nil {
@@ -342,7 +335,6 @@ func (ptt *PttClient) EnterBoard(board string) error {
 			logError("read after enter board", err)
 			return err
 		}
-		fmt.Printf("%s\n", d)
 		if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
 			!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
 			break
@@ -400,13 +392,20 @@ func cleanData(data []byte) []byte {
 }
 
 func parseMessage(l []byte, i int32) (*Message, error) {
-	fmt.Printf("line: %s\n", l)
+	var t time.Time
+	var err error
+	if len(l) < 11 || !bytes.Contains(l, []byte(":")) {
+		fmt.Printf("not message line: %s\n", l)
+		return nil, errors.New("not message line")
+	}
 	date := l[len(l)-11:]
-	t, err := time.Parse("01/02 15:04", string(date))
+	t, err = time.Parse("01/02 15:04", string(date))
 	if err != nil {
 		fmt.Printf("parse time error %s \n", err)
+		fmt.Printf("error line: %s\n", l)
 		t = time.Now()
 	}
+
 	space := bytes.Index(l, []byte(" "))
 	colon := bytes.Index(l, []byte(":"))
 	user := l[space+1 : colon]
