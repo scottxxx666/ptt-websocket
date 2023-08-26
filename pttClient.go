@@ -153,11 +153,10 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 		messages, msgId = ptt.parsePageMessages(page, msgId, lastMessage)
 		ptt.lock.Unlock()
 		if len(messages) > 0 {
-			lastMessage = &messages[0]
+			lastMessage = &messages[len(messages)-1]
 		}
-		for i := len(messages) - 1; i >= 0; i-- {
-			message := messages[i]
-			fmt.Printf("%s: %s %s\n", message.User, message.Message, message.Time)
+		for i := 0; i < len(messages); i++ {
+			fmt.Printf("%s: %s %s\n", messages[i].User, messages[i].Message, messages[i].Time)
 		}
 
 		time.Sleep(1 * time.Second)
@@ -168,7 +167,7 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 	lines := bytes.Split(page, []byte("\n"))
 
 	lastLineNum := len(lines) - 2
-	messages := make([]Message, 0)
+	reversedMsgs := make([]Message, 0)
 	for i := lastLineNum; i >= 0; i-- {
 		if len(lines[i]) == 0 {
 			continue
@@ -185,10 +184,25 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 		if lastMessage != nil && (message.Equal(lastMessage) || message.Time.Before(lastMessage.Time)) {
 			break
 		}
-		messages = append(messages, *message)
+		reversedMsgs = append(reversedMsgs, *message)
 	}
 
-	return messages, msgId
+	msgs := make([]Message, 0, len(reversedMsgs))
+	msgTime := time.Now()
+	for i := len(reversedMsgs) - 1; i >= 0; i-- {
+		msg := reversedMsgs[i]
+
+		// assign last msg time if parse current msg time failed
+		// since we only use last message's time, so assign time from prev is better
+		if msg.Time.IsZero() {
+			msg.Time = msgTime
+		} else {
+			msgTime = msg.Time
+		}
+		msgs = append(msgs, msg)
+	}
+
+	return msgs, msgId
 }
 
 func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
