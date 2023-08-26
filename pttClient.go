@@ -32,8 +32,6 @@ func (m *Message) Equal(input *Message) bool {
 }
 
 func (m *Message) Null() bool {
-	fmt.Println(m.User)
-	fmt.Println(m.User == "")
 	return m.User == ""
 }
 
@@ -69,12 +67,10 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 			logError("read fail", err)
 			return err
 		}
-		fmt.Printf("%s\n", d)
 
 		if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
 			return AuthError
 		} else if bytes.Contains(d, []byte("請輸入代號")) {
-			fmt.Println("send account")
 			accountByte := []byte(account)
 			for i := range accountByte {
 				err = send(ptt.conn, accountByte[i:i+1])
@@ -103,7 +99,6 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
 			err = send(ptt.conn, []byte(" "))
 			if err != nil {
-				fmt.Println(err)
 				logError("send continue", err)
 				return err
 			}
@@ -154,7 +149,7 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 		messages, msgId = ptt.parsePageMessages(page, msgId, lastMessage)
 		ptt.lock.Unlock()
 		if len(messages) > 0 {
-			lastMessage = &messages[0]
+			lastMessage = &messages[len(messages)-1]
 		}
 		json, err := json.Marshal(messages)
 		if err != nil {
@@ -171,7 +166,7 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 	lines := bytes.Split(page, []byte("\n"))
 
 	lastLineNum := len(lines) - 2
-	messages := make([]Message, 0)
+	reversedMsgs := make([]Message, 0)
 	for i := lastLineNum; i >= 0; i-- {
 		if len(lines[i]) == 0 {
 			continue
@@ -188,10 +183,25 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 		if lastMessage != nil && (message.Equal(lastMessage) || message.Time.Before(lastMessage.Time)) {
 			break
 		}
-		messages = append(messages, *message)
+		reversedMsgs = append(reversedMsgs, *message)
 	}
 
-	return messages, msgId
+	msgs := make([]Message, 0, len(reversedMsgs))
+	msgTime := time.Now()
+	for i := len(reversedMsgs) - 1; i >= 0; i-- {
+		msg := reversedMsgs[i]
+
+		// assign last msg time if parse current msg time failed
+		// since we only use last message's time, so assign time from prev is better
+		if msg.Time.IsZero() {
+			msg.Time = msgTime
+		} else {
+			msgTime = msg.Time
+		}
+		msgs = append(msgs, msg)
+	}
+
+	return msgs, msgId
 }
 
 func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
@@ -305,7 +315,6 @@ func (ptt *PttClient) EnterBoard(board string) error {
 		logError("read search board command", err)
 		return err
 	}
-	fmt.Printf("%s\n", d)
 
 	searchBoard := []byte(board)
 	for i := range searchBoard {
@@ -318,7 +327,6 @@ func (ptt *PttClient) EnterBoard(board string) error {
 			logError("read search board name", err)
 			return err
 		}
-		fmt.Printf("%s\n", d)
 	}
 
 	if err = send(ptt.conn, []byte("\r")); err != nil {
@@ -331,7 +339,6 @@ func (ptt *PttClient) EnterBoard(board string) error {
 			logError("read after enter board", err)
 			return err
 		}
-		fmt.Printf("%s\n", d)
 		if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
 			!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
 			break
@@ -389,13 +396,20 @@ func cleanData(data []byte) []byte {
 }
 
 func parseMessage(l []byte, i int32) (*Message, error) {
-	fmt.Printf("line: %s\n", l)
+	var t time.Time
+	var err error
+	if len(l) < 11 || !bytes.Contains(l, []byte(":")) {
+		fmt.Printf("not message line: %s\n", l)
+		return nil, errors.New("not message line")
+	}
 	date := l[len(l)-11:]
-	t, err := time.Parse("01/02 15:04", string(date))
+	t, err = time.Parse("01/02 15:04", string(date))
 	if err != nil {
 		fmt.Printf("parse time error %s \n", err)
+		fmt.Printf("error line: %s\n", l)
 		t = time.Now()
 	}
+
 	space := bytes.Index(l, []byte(" "))
 	colon := bytes.Index(l, []byte(":"))
 	user := l[space+1 : colon]
