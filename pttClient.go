@@ -164,9 +164,6 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 	lastLineNum := len(lines) - 2
 	reversedMsgs := make([]Message, 0)
 	for i := lastLineNum; i >= 0; i-- {
-		if len(lines[i]) == 0 {
-			continue
-		}
 		if bytes.Contains(lines[i], []byte("※ 文章網址:")) || bytes.Contains(lines[i], []byte("※ 發信站:")) {
 			break
 		}
@@ -397,7 +394,7 @@ func cleanData(data []byte) []byte {
 func parseMessage(l []byte, i int32) (*Message, error) {
 	var t time.Time
 	var err error
-	if len(l) < 11 || !bytes.Contains(l, []byte(":")) {
+	if len(l) < 11 || (!bytes.Equal(l[0:4], []byte("推 ")) && !bytes.Equal(l[0:4], []byte("噓 ")) && !bytes.Equal(l[0:4], []byte("→ "))) {
 		fmt.Printf("not message line: %s\n", l)
 		return nil, errors.New("not message line")
 	}
