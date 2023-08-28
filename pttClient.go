@@ -16,8 +16,9 @@ import (
 	"time"
 )
 
-var WrongArticleIdError = errors.New("wrong article id")
-var AuthError = errors.New("auth fail")
+var WrongArticleIdError = errors.New("WRONG_ARTICLE")
+var AuthError = errors.New("AUTH_FAIL")
+var MsgEncodeError = errors.New("MSG_ENCODE_ERR")
 
 type Message struct {
 	Id      int32     `json:"id"`
@@ -219,7 +220,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 	msgBytes, _, err := transform.Bytes(encoder, []byte(message+"\r"))
 	if err != nil {
 		logError("encode big5 error", err)
-		return err
+		return MsgEncodeError
 	}
 
 	ptt.lock.Lock()
