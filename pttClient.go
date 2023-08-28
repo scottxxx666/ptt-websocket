@@ -19,6 +19,7 @@ import (
 var WrongArticleIdError = errors.New("WRONG_ARTICLE")
 var AuthError = errors.New("AUTH_FAIL")
 var MsgEncodeError = errors.New("MSG_ENCODE_ERR")
+var NotFinishArticleError = errors.New("NOT_FINISH_ARTICLE")
 
 type Message struct {
 	Id      int32     `json:"id"`
@@ -118,6 +119,8 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 				logError("delete login fails", err)
 				return err
 			}
+		} else if bytes.Contains(d, []byte("您有一篇文章尚未完成")) {
+			return NotFinishArticleError
 		} else if bytes.Contains(d, []byte("【主功能表】")) {
 			break
 		}
