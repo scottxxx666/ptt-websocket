@@ -40,6 +40,10 @@ func PushMessage(message string, reject js.Value) {
 	err := ptt.PushMessage(message)
 	if err != nil {
 		fmt.Println(err)
+		if errors.Is(err, MsgEncodeError) {
+			reject.Invoke(MsgEncodeError.Error())
+			return
+		}
 		reject.Invoke("推文失敗")
 	}
 }
@@ -74,6 +78,9 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	if err != nil {
 		if errors.Is(err, AuthError) {
 			reject.Invoke("密碼不對或無此帳號")
+			return
+		} else if errors.Is(err, NotFinishArticleError) {
+			reject.Invoke("有文章尚未完成，請先登入後暫存或捨棄再使用 PTT Chat")
 			return
 		}
 		reject.Invoke("登入失敗")
