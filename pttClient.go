@@ -218,6 +218,13 @@ func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
 }
 
 func (ptt *PttClient) PushMessage(message string) error {
+	encoder := traditionalchinese.Big5.NewEncoder()
+	msgBytes, _, err := transform.Bytes(encoder, []byte(message+"\r"))
+	if err != nil {
+		logError("encode big5 error", err)
+		return err
+	}
+
 	ptt.lock.Lock()
 	defer ptt.lock.Unlock()
 	if err := send(ptt.conn, []byte("X")); err != nil {
@@ -241,11 +248,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 			return err
 		}
 	}
-	encoder := traditionalchinese.Big5.NewEncoder()
-	msgBytes, _, err := transform.Bytes(encoder, []byte(message+"\r"))
-	if err != nil {
-		logError("encode big5 error", err)
-	}
+
 	if err = send(ptt.conn, msgBytes); err != nil {
 		logError("send push command type", err)
 		return err
