@@ -165,7 +165,7 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 		}
 		callback.Invoke(string(json))
 
-		time.Sleep(1 * time.Second)
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 
