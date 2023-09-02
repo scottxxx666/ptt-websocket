@@ -139,14 +139,17 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 			return err
 		}
 
-		page, err := ptt.EnterArticle(article)
+		// since sometimes get article first page not page end
+		// temporarily change enterArticle to fetchArticleEnd
+		page, err := ptt.fetchArticleEnd(article)
 		if err != nil {
 			return err
 		}
-		page, err = ptt.pageEnd(page)
-		if err != nil {
-			return err
-		}
+		//
+		// page, err = ptt.pageEnd(page)
+		// if err != nil {
+		// 	return err
+		// }
 
 		fmt.Printf("screen: %s\n", page)
 		var messages []Message
@@ -277,7 +280,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 	return nil
 }
 
-func (ptt *PttClient) EnterArticle(article string) (firstPage []byte, err error) {
+func (ptt *PttClient) fetchArticleEnd(article string) (lastPage []byte, err error) {
 	var data []byte
 	articleId := []byte(article + "\r")
 	for i := range articleId {
@@ -295,16 +298,16 @@ func (ptt *PttClient) EnterArticle(article string) (firstPage []byte, err error)
 		return nil, WrongArticleIdError
 	}
 
-	if err = send(ptt.conn, []byte("\r")); err != nil {
+	if err = send(ptt.conn, []byte("\rG")); err != nil {
 		logError("send article enter command", err)
 		return nil, err
 	}
-	firstPage, err = read(ptt.conn)
+	lastPage, err = read(ptt.conn)
 	if err != nil {
 		logError("read article bottom", err)
 		return nil, err
 	}
-	return firstPage, nil
+	return lastPage, nil
 }
 
 func (ptt *PttClient) EnterBoard(board string) error {
