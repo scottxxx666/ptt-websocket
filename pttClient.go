@@ -180,8 +180,7 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 		message, err := parseMessage(lines[i], msgId)
 		msgId = (msgId + 1) % math.MaxInt32
 		if err != nil {
-			logError("parse message error", err)
-			break
+			continue
 		}
 		if lastMessage != nil && (message.Equal(lastMessage) || message.Time.Before(lastMessage.Time)) {
 			break
