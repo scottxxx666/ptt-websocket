@@ -151,7 +151,6 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 		// 	return err
 		// }
 
-		fmt.Printf("screen: %s\n", page)
 		var messages []Message
 		messages, msgId = ptt.parsePageMessages(page, msgId, lastMessage)
 		ptt.lock.Unlock()
