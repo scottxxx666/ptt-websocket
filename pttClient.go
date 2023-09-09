@@ -215,7 +215,8 @@ func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
 	if bytes.Contains(page, []byte("頁 (100%)  目前顯示")) {
 		return page, nil
 	}
-	err := send(ptt.conn, []byte("G"))
+	// WORKAROUND: send page end twice to force page end
+	err := send(ptt.conn, []byte("GG"))
 	if err != nil {
 		logError("send article bottom command", err)
 		return nil, err
