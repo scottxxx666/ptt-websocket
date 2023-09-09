@@ -21,6 +21,7 @@ var WrongArticleIdError = errors.New("WRONG_ARTICLE")
 var AuthError = errors.New("AUTH_FAIL")
 var MsgEncodeError = errors.New("MSG_ENCODE_ERR")
 var NotFinishArticleError = errors.New("NOT_FINISH_ARTICLE")
+var PttOverloadError = errors.New("PTT_OVERLOAD")
 
 type Message struct {
 	Id      int32     `json:"id"`
@@ -70,7 +71,9 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 			return err
 		}
 
-		if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
+		if bytes.Contains(d, []byte("系統過載, 請稍後再來")) {
+			return PttOverloadError
+		} else if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
 			return AuthError
 		} else if bytes.Contains(d, []byte("請輸入代號")) {
 			accountByte := []byte(account)
@@ -124,6 +127,14 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 			return NotFinishArticleError
 		} else if bytes.Contains(d, []byte("【主功能表】")) {
 			break
+		} else {
+			// quit for anything else
+			// example: 您保存信件數目超出上限 200, 請整理
+			err = send(ptt.conn, []byte("q"))
+			if err != nil {
+				logError("login else fails", err)
+				return err
+			}
 		}
 	}
 	return nil
@@ -210,7 +221,8 @@ func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
 	if bytes.Contains(page, []byte("頁 (100%)  目前顯示")) {
 		return page, nil
 	}
-	err := send(ptt.conn, []byte("G"))
+	// WORKAROUND: send page end twice to force page end
+	err := send(ptt.conn, []byte("GG"))
 	if err != nil {
 		logError("send article bottom command", err)
 		return nil, err
