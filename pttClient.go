@@ -124,16 +124,16 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 			}
 		} else if bytes.Contains(d, []byte("您有一篇文章尚未完成")) {
 			return NotFinishArticleError
-		} else if bytes.Contains(d, []byte("【主功能表】")) {
-			break
-		} else {
-			// quit for anything else
-			// example: 您保存信件數目超出上限 200, 請整理
+		} else if bytes.Contains(d, []byte("您保存信件數目")) || bytes.Contains(d, []byte("郵件選單")) {
+			// 您保存信件數目...超出上限 200, 請整理
+			// need send and read twice
 			err = send(ptt.conn, []byte("q"))
 			if err != nil {
 				logError("login else fails", err)
 				return err
 			}
+		} else if bytes.Contains(d, []byte("主功能表")) {
+			break
 		}
 	}
 	return nil
