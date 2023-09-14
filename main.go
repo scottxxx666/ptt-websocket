@@ -120,6 +120,13 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	if err != nil {
 		if errors.Is(err, AuthError) {
 			fmt.Println("密碼不對或無此帳號")
+			return
+		} else if errors.Is(err, NotFinishArticleError) {
+			fmt.Println("有文章尚未完成，請先登入後暫存或捨棄再使用 PTT Chat")
+			return
+		} else if errors.Is(err, PttOverloadError) {
+			fmt.Println("系統過載, 請稍後再來")
+			return
 		}
 		return
 	}

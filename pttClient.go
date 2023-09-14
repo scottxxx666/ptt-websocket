@@ -129,7 +129,7 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 			// need send and read twice
 			err = send(ptt.conn, []byte("q"))
 			if err != nil {
-				logError("login else fails", err)
+				logError("login mail fails", err)
 				return err
 			}
 		} else if bytes.Contains(d, []byte("主功能表")) {
