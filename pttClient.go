@@ -42,6 +42,7 @@ type PttClient struct {
 	conn   *websocket.Conn
 	Cancel context.CancelFunc
 	lock   sync.Mutex
+	Screen []byte
 }
 
 func NewPttClient(context context.Context) *PttClient {
@@ -62,19 +63,19 @@ func (ptt *PttClient) Close() {
 	ptt.conn.Close(websocket.StatusInternalError, "")
 }
 
-func (ptt *PttClient) Login(account string, password string, revokeOthers bool) error {
+func (ptt *PttClient) Login(account string, password string, revokeOthers bool) (err error) {
 	for {
-		d, err := read(ptt.conn)
+		ptt.Screen, err = read(ptt.conn)
 		if err != nil {
 			logError("read fail", err)
 			return err
 		}
 
-		if bytes.Contains(d, []byte("系統過載, 請稍後再來")) {
+		if bytes.Contains(ptt.Screen, []byte("系統過載, 請稍後再來")) {
 			return PttOverloadError
-		} else if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
+		} else if bytes.Contains(ptt.Screen, []byte("密碼不對或無此帳號")) {
 			return AuthError
-		} else if bytes.Contains(d, []byte("請輸入代號")) {
+		} else if bytes.Contains(ptt.Screen, []byte("請輸入代號")) {
 			accountByte := []byte(account)
 			for i := range accountByte {
 				err = send(ptt.conn, accountByte[i:i+1])
@@ -92,7 +93,7 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 				logError("send account enter", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("請輸入您的密碼")) {
+		} else if bytes.Contains(ptt.Screen, []byte("請輸入您的密碼")) {
 			passwordByte := []byte(password + "\r")
 			for i := range passwordByte {
 				if err = send(ptt.conn, passwordByte[i:i+1]); err != nil {
@@ -100,13 +101,13 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 					return err
 				}
 			}
-		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
+		} else if bytes.Contains(ptt.Screen, []byte("按任意鍵繼續")) {
 			err = send(ptt.conn, []byte(" "))
 			if err != nil {
 				logError("send continue", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("您想刪除其他重複登入的連線嗎")) {
+		} else if bytes.Contains(ptt.Screen, []byte("您想刪除其他重複登入的連線嗎")) {
 			revoke := "N"
 			if revokeOthers {
 				revoke = "Y"
@@ -116,15 +117,15 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 				logError("send revoke others", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("您要刪除以上錯誤嘗試的記錄嗎?")) {
+		} else if bytes.Contains(ptt.Screen, []byte("您要刪除以上錯誤嘗試的記錄嗎?")) {
 			err = send(ptt.conn, []byte("n\r"))
 			if err != nil {
 				logError("delete login fails", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("您有一篇文章尚未完成")) {
+		} else if bytes.Contains(ptt.Screen, []byte("您有一篇文章尚未完成")) {
 			return NotFinishArticleError
-		} else if bytes.Contains(d, []byte("您保存信件數目")) || bytes.Contains(d, []byte("郵件選單")) {
+		} else if bytes.Contains(ptt.Screen, []byte("您保存信件數目")) || bytes.Contains(ptt.Screen, []byte("郵件選單")) {
 			// 您保存信件數目...超出上限 200, 請整理
 			// need send and read twice
 			err = send(ptt.conn, []byte("q"))
@@ -132,7 +133,7 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 				logError("login mail fails", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("主功能表")) {
+		} else if bytes.Contains(ptt.Screen, []byte("主功能表")) {
 			break
 		}
 	}
@@ -149,18 +150,18 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 			return err
 		}
 
-		page, err := ptt.EnterArticle(article)
+		err = ptt.EnterArticle(article)
 		if err != nil {
 			return err
 		}
-		page, err = ptt.pageEnd(page)
+		err = ptt.pageEnd()
 		if err != nil {
 			return err
 		}
 
-		fmt.Printf("screen: %s\n", page)
+		fmt.Printf("screen: %s\n", ptt.Screen)
 		var messages []Message
-		messages, msgId = ptt.parsePageMessages(page, msgId, lastMessage)
+		messages, msgId = ptt.parsePageMessages(msgId, lastMessage)
 		ptt.lock.Unlock()
 		if len(messages) > 0 {
 			lastMessage = &messages[len(messages)-1]
@@ -173,8 +174,8 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 	}
 }
 
-func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *Message) ([]Message, int32) {
-	lines := bytes.Split(page, []byte("\n"))
+func (ptt *PttClient) parsePageMessages(msgId int32, lastMessage *Message) ([]Message, int32) {
+	lines := bytes.Split(ptt.Screen, []byte("\n"))
 
 	lastLineNum := len(lines) - 2
 	reversedMsgs := make([]Message, 0)
@@ -211,22 +212,22 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 	return msgs, msgId
 }
 
-func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
-	if bytes.Contains(page, []byte("頁 (100%)  目前顯示")) {
-		return page, nil
+func (ptt *PttClient) pageEnd() error {
+	if bytes.Contains(ptt.Screen, []byte("頁 (100%)  目前顯示")) {
+		return nil
 	}
 	// WORKAROUND: send page end twice to force page end
 	err := send(ptt.conn, []byte("GG"))
 	if err != nil {
 		logError("send article bottom command", err)
-		return nil, err
+		return err
 	}
-	end, err := read(ptt.conn)
+	ptt.Screen, err = read(ptt.conn)
 	if err != nil {
 		logError("read article bottom", err)
-		return nil, err
+		return err
 	}
-	return end, nil
+	return nil
 }
 
 func (ptt *PttClient) PushMessage(message string) error {
@@ -284,44 +285,43 @@ func (ptt *PttClient) PushMessage(message string) error {
 	return nil
 }
 
-func (ptt *PttClient) EnterArticle(article string) (firstPage []byte, err error) {
-	var data []byte
+func (ptt *PttClient) EnterArticle(article string) (err error) {
 	articleId := []byte(article + "\r")
 	for i := range articleId {
 		if err = send(ptt.conn, articleId[i:i+1]); err != nil {
 			logError("send search article", err)
-			return nil, err
+			return err
 		}
-		data, err = read(ptt.conn)
+		ptt.Screen, err = read(ptt.conn)
 		if err != nil {
 			logError("read search article", err)
-			return nil, err
+			return err
 		}
 	}
-	if bytes.Contains(data, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
-		return nil, WrongArticleIdError
+	if bytes.Contains(ptt.Screen, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
+		return WrongArticleIdError
 	}
 
 	if err = send(ptt.conn, []byte("\r")); err != nil {
 		logError("send article enter command", err)
-		return nil, err
+		return err
 	}
-	firstPage, err = read(ptt.conn)
+	ptt.Screen, err = read(ptt.conn)
 	if err != nil {
 		logError("read article bottom", err)
-		return nil, err
+		return err
 	}
-	return firstPage, nil
+	return nil
 }
 
-func (ptt *PttClient) EnterBoard(board string) error {
+func (ptt *PttClient) EnterBoard(board string) (err error) {
 	searchBoardCmd := []byte("s")
-	err := send(ptt.conn, searchBoardCmd)
+	err = send(ptt.conn, searchBoardCmd)
 	if err != nil {
 		logError("send search board command", err)
 		return err
 	}
-	d, err := read(ptt.conn)
+	ptt.Screen, err = read(ptt.conn)
 	if err != nil {
 		logError("read search board command", err)
 		return err
@@ -345,13 +345,13 @@ func (ptt *PttClient) EnterBoard(board string) error {
 		return err
 	}
 	for {
-		d, err = read(ptt.conn)
+		ptt.Screen, err = read(ptt.conn)
 		if err != nil {
 			logError("read after enter board", err)
 			return err
 		}
-		if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
-			!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
+		if bytes.Contains(ptt.Screen, []byte("【板主:")) && bytes.Contains(ptt.Screen, []byte("看板《")) &&
+			!bytes.Contains(ptt.Screen, []byte("按任意鍵繼續")) && !bytes.Contains(ptt.Screen, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
 			break
 		}
 		if err = send(ptt.conn, []byte(" ")); err != nil {
