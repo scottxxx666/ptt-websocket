@@ -39,10 +39,11 @@ type PttClient struct {
 	Cancel context.CancelFunc
 	lock   sync.Mutex
 	Screen []byte
+	Debug  bool
 }
 
 func NewPttClient(context context.Context) *PttClient {
-	return &PttClient{ctx: context, conn: NewPttConnection(context)}
+	return &PttClient{ctx: context, conn: NewPttConnection(context), Debug: false}
 }
 
 func (ptt *PttClient) Connect() (err error) {
@@ -61,6 +62,7 @@ func (ptt *PttClient) Close() {
 func (ptt *PttClient) Login(account string, password string, revokeOthers bool) (err error) {
 	for {
 		ptt.Screen, err = ptt.conn.Read()
+		ptt.logDebug("Login----\n%s\n----\n", ptt.Screen)
 		if err != nil {
 			logError("read fail", err)
 			return err
@@ -129,6 +131,7 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 				return err
 			}
 		} else if bytes.Contains(ptt.Screen, []byte("主功能表")) {
+			ptt.logDebug("login success")
 			break
 		}
 	}
@@ -154,7 +157,7 @@ func (ptt *PttClient) PullMessages(board string, article string) error {
 			return err
 		}
 
-		fmt.Printf("screen: %s\n", ptt.Screen)
+		ptt.logDebug("pull message:\n%s\n", ptt.Screen)
 		var messages []Message
 		messages, msgId = ptt.parsePageMessages(msgId, lastMessage)
 		ptt.lock.Unlock()
@@ -341,6 +344,7 @@ func (ptt *PttClient) EnterBoard(board string) (err error) {
 	}
 	for {
 		ptt.Screen, err = ptt.conn.Read()
+		ptt.logDebug("read after enter board-\n%s\n", ptt.Screen)
 		if err != nil {
 			logError("read after enter board", err)
 			return err
@@ -386,4 +390,10 @@ func parseMessage(l []byte, i int32) (*Message, error) {
 		User:    string(bytes.TrimRight(user, " ")),
 		Message: string(bytes.TrimRight(l[colon+2:len(l)-11], " ")),
 	}, nil
+}
+
+func (ptt *PttClient) logDebug(format string, a ...interface{}) {
+	if ptt.Debug {
+		fmt.Printf(format, a...)
+	}
 }

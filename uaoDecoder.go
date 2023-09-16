@@ -19,7 +19,7 @@ func (c *UaoDecoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err
 			r, ok := B2U[int(k)]
 			if !ok {
 				saveToFile("no.txt", src)
-				fmt.Printf("Noooo:%d %c %s\n", k, byteW, src[nSrc:nSrc+2])
+				fmt.Printf("decode fail: %d %c %s\n", k, byteW, src[nSrc:nSrc+2])
 				dst[nDst] = src[nSrc]
 				size = 1
 				nDst = 1

@@ -116,7 +116,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	}
 	defer ptt.Close()
 
-	err = ptt.Login(account, password, false)
+	err = ptt.Login(account, password, revokeOthers)
 	if err != nil {
 		if errors.Is(err, AuthError) {
 			fmt.Println("密碼不對或無此帳號")
