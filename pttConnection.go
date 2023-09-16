@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
 	"io"
 	"net/http"
@@ -40,18 +39,19 @@ func (p *PttConnection) Read() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		reader := transform.NewReader(bytes.NewBuffer(data), traditionalchinese.Big5.NewDecoder())
-		big5, err := io.ReadAll(reader)
-		if err != nil {
-			return nil, err
-		}
-		// append big5 to all
-		all = append(all, big5...)
+		all = append(all, data...)
 		if len(data) < 1024 {
 			break
 		}
 	}
-	return cleanData(all), nil
+	reader := transform.NewReader(bytes.NewBuffer(cleanData(all)), NewUaoDecoder())
+
+	utf8, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, err
+	}
+
+	return utf8, nil
 }
 
 func cleanData(data []byte) []byte {
