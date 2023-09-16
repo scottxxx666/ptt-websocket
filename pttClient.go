@@ -8,10 +8,7 @@ import (
 	"fmt"
 	"golang.org/x/text/encoding/traditionalchinese"
 	"golang.org/x/text/transform"
-	"io"
 	"math"
-	"nhooyr.io/websocket"
-	"regexp"
 	"sync"
 	"syscall/js"
 	"time"
@@ -40,100 +37,103 @@ func (m *Message) Null() bool {
 
 type PttClient struct {
 	ctx    context.Context
-	conn   *websocket.Conn
+	conn   *PttConnection
 	Cancel context.CancelFunc
 	lock   sync.Mutex
+	Screen []byte
+	Debug  bool
 }
 
 func NewPttClient(context context.Context) *PttClient {
-	return &PttClient{ctx: context}
+	return &PttClient{ctx: context, conn: NewPttConnection(context), Debug: false}
 }
 
-func (ptt *PttClient) Connect() error {
-	var err error
-	ptt.conn, _, err = websocket.Dial(ptt.ctx, "wss://ws.ptt.cc/bbs", nil)
+func (ptt *PttClient) Connect() (err error) {
+	err = ptt.conn.Connect()
 	if err != nil {
-		logError("connect websocket error", err)
+		logError("connect error", err)
 		return err
 	}
 	return nil
 }
 
 func (ptt *PttClient) Close() {
-	ptt.conn.Close(websocket.StatusInternalError, "")
+	ptt.conn.Close()
 }
 
-func (ptt *PttClient) Login(account string, password string, revokeOthers bool) error {
+func (ptt *PttClient) Login(account string, password string, revokeOthers bool) (err error) {
 	for {
-		d, err := read(ptt.conn)
+		ptt.Screen, err = ptt.conn.Read()
+		ptt.logDebug("Login----\n%s\n----\n", ptt.Screen)
 		if err != nil {
 			logError("read fail", err)
 			return err
 		}
 
-		if bytes.Contains(d, []byte("系統過載, 請稍後再來")) {
+		if bytes.Contains(ptt.Screen, []byte("系統過載, 請稍後再來")) {
 			return PttOverloadError
-		} else if bytes.Contains(d, []byte("密碼不對或無此帳號")) {
+		} else if bytes.Contains(ptt.Screen, []byte("密碼不對或無此帳號")) {
 			return AuthError
-		} else if bytes.Contains(d, []byte("請輸入代號")) {
+		} else if bytes.Contains(ptt.Screen, []byte("請輸入代號")) {
 			accountByte := []byte(account)
 			for i := range accountByte {
-				err = send(ptt.conn, accountByte[i:i+1])
+				err = ptt.conn.Send(accountByte[i : i+1])
 				if err != nil {
 					logError("send account", err)
 					return err
 				}
-				if _, err = read(ptt.conn); err != nil {
+				if _, err = ptt.conn.Read(); err != nil {
 					logError("send account read", err)
 					return err
 				}
 			}
-			err = send(ptt.conn, []byte("\r"))
+			err = ptt.conn.Send([]byte("\r"))
 			if err != nil {
 				logError("send account enter", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("請輸入您的密碼")) {
+		} else if bytes.Contains(ptt.Screen, []byte("請輸入您的密碼")) {
 			passwordByte := []byte(password + "\r")
 			for i := range passwordByte {
-				if err = send(ptt.conn, passwordByte[i:i+1]); err != nil {
+				if err = ptt.conn.Send(passwordByte[i : i+1]); err != nil {
 					logError("password send", err)
 					return err
 				}
 			}
-		} else if bytes.Contains(d, []byte("按任意鍵繼續")) {
-			err = send(ptt.conn, []byte(" "))
+		} else if bytes.Contains(ptt.Screen, []byte("按任意鍵繼續")) {
+			err = ptt.conn.Send([]byte(" "))
 			if err != nil {
 				logError("send continue", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("您想刪除其他重複登入的連線嗎")) {
+		} else if bytes.Contains(ptt.Screen, []byte("您想刪除其他重複登入的連線嗎")) {
 			revoke := "N"
 			if revokeOthers {
 				revoke = "Y"
 			}
-			err = send(ptt.conn, []byte(revoke+"\r"))
+			err = ptt.conn.Send([]byte(revoke + "\r"))
 			if err != nil {
 				logError("send revoke others", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("您要刪除以上錯誤嘗試的記錄嗎?")) {
-			err = send(ptt.conn, []byte("n\r"))
+		} else if bytes.Contains(ptt.Screen, []byte("您要刪除以上錯誤嘗試的記錄嗎?")) {
+			err = ptt.conn.Send([]byte("n\r"))
 			if err != nil {
 				logError("delete login fails", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("您有一篇文章尚未完成")) {
+		} else if bytes.Contains(ptt.Screen, []byte("您有一篇文章尚未完成")) {
 			return NotFinishArticleError
-		} else if bytes.Contains(d, []byte("您保存信件數目")) || bytes.Contains(d, []byte("郵件選單")) {
+		} else if bytes.Contains(ptt.Screen, []byte("您保存信件數目")) || bytes.Contains(ptt.Screen, []byte("郵件選單")) {
 			// 您保存信件數目...超出上限 200, 請整理
 			// need send and read twice
-			err = send(ptt.conn, []byte("q"))
+			err = ptt.conn.Send([]byte("q"))
 			if err != nil {
-				logError("login else fails", err)
+				logError("login mail fails", err)
 				return err
 			}
-		} else if bytes.Contains(d, []byte("主功能表")) {
+		} else if bytes.Contains(ptt.Screen, []byte("主功能表")) {
+			ptt.logDebug("login success\n")
 			break
 		}
 	}
@@ -152,7 +152,7 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 
 		// since sometimes get article first page not page end
 		// temporarily change enterArticle to fetchArticleEnd
-		page, err := ptt.fetchArticleEnd(article)
+		err = ptt.fetchArticleEnd(article)
 		if err != nil {
 			return err
 		}
@@ -162,8 +162,9 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 		// 	return err
 		// }
 
+		ptt.logDebug("pull message:\n%s\n", ptt.Screen)
 		var messages []Message
-		messages, msgId = ptt.parsePageMessages(page, msgId, lastMessage)
+		messages, msgId = ptt.parsePageMessages(msgId, lastMessage)
 		ptt.lock.Unlock()
 		if len(messages) > 0 {
 			lastMessage = &messages[len(messages)-1]
@@ -179,8 +180,8 @@ func (ptt *PttClient) PullMessages(board string, article string, callback js.Val
 	}
 }
 
-func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *Message) ([]Message, int32) {
-	lines := bytes.Split(page, []byte("\n"))
+func (ptt *PttClient) parsePageMessages(msgId int32, lastMessage *Message) ([]Message, int32) {
+	lines := bytes.Split(ptt.Screen, []byte("\n"))
 
 	lastLineNum := len(lines) - 2
 	reversedMsgs := make([]Message, 0)
@@ -217,22 +218,22 @@ func (ptt *PttClient) parsePageMessages(page []byte, msgId int32, lastMessage *M
 	return msgs, msgId
 }
 
-func (ptt *PttClient) pageEnd(page []byte) ([]byte, error) {
-	if bytes.Contains(page, []byte("頁 (100%)  目前顯示")) {
-		return page, nil
+func (ptt *PttClient) pageEnd() error {
+	if bytes.Contains(ptt.Screen, []byte("頁 (100%)  目前顯示")) {
+		return nil
 	}
 	// WORKAROUND: send page end twice to force page end
-	err := send(ptt.conn, []byte("GG"))
+	err := ptt.conn.Send([]byte("GG"))
 	if err != nil {
 		logError("send article bottom command", err)
-		return nil, err
+		return err
 	}
-	end, err := read(ptt.conn)
+	ptt.Screen, err = ptt.conn.Read()
 	if err != nil {
 		logError("read article bottom", err)
-		return nil, err
+		return err
 	}
-	return end, nil
+	return nil
 }
 
 func (ptt *PttClient) PushMessage(message string) error {
@@ -245,43 +246,43 @@ func (ptt *PttClient) PushMessage(message string) error {
 
 	ptt.lock.Lock()
 	defer ptt.lock.Unlock()
-	if err := send(ptt.conn, []byte("X")); err != nil {
+	if err := ptt.conn.Send([]byte("X")); err != nil {
 		logError("send push command", err)
 		return err
 	}
-	d, err := read(ptt.conn)
+	ptt.Screen, err = ptt.conn.Read()
 	if err != nil {
 		logError("read push command", err)
 		return err
 	}
 
-	if bytes.Contains(d, []byte("給它噓聲")) {
-		if err = send(ptt.conn, []byte("1")); err != nil {
+	if bytes.Contains(ptt.Screen, []byte("給它噓聲")) {
+		if err = ptt.conn.Send([]byte("1")); err != nil {
 			logError("send push command type", err)
 			return err
 		}
-		d, err = read(ptt.conn)
+		ptt.Screen, err = ptt.conn.Read()
 		if err != nil {
 			logError("read push command", err)
 			return err
 		}
 	}
 
-	if err = send(ptt.conn, msgBytes); err != nil {
+	if err = ptt.conn.Send(msgBytes); err != nil {
 		logError("send push command type", err)
 		return err
 	}
-	d, err = read(ptt.conn)
+	ptt.Screen, err = ptt.conn.Read()
 	if err != nil {
 		logError("read push command", err)
 		return err
 	}
 
-	if err = send(ptt.conn, []byte("Y\r")); err != nil {
+	if err = ptt.conn.Send([]byte("Y\r")); err != nil {
 		logError("send push command type", err)
 		return err
 	}
-	d, err = read(ptt.conn)
+	ptt.Screen, err = ptt.conn.Read()
 	if err != nil {
 		logError("read push command", err)
 		return err
@@ -290,44 +291,43 @@ func (ptt *PttClient) PushMessage(message string) error {
 	return nil
 }
 
-func (ptt *PttClient) fetchArticleEnd(article string) (lastPage []byte, err error) {
-	var data []byte
+func (ptt *PttClient) fetchArticleEnd(article string) (err error) {
 	articleId := []byte(article + "\r")
 	for i := range articleId {
-		if err = send(ptt.conn, articleId[i:i+1]); err != nil {
+		if err = ptt.conn.Send(articleId[i : i+1]); err != nil {
 			logError("send search article", err)
-			return nil, err
+			return err
 		}
-		data, err = read(ptt.conn)
+		ptt.Screen, err = ptt.conn.Read()
 		if err != nil {
 			logError("read search article", err)
-			return nil, err
+			return err
 		}
 	}
-	if bytes.Contains(data, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
-		return nil, WrongArticleIdError
+	if bytes.Contains(ptt.Screen, []byte("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")) {
+		return WrongArticleIdError
 	}
 
-	if err = send(ptt.conn, []byte("\rG")); err != nil {
+	if err = ptt.conn.Send([]byte("\rG")); err != nil {
 		logError("send article enter command", err)
-		return nil, err
+		return err
 	}
-	lastPage, err = read(ptt.conn)
+	ptt.Screen, err = ptt.conn.Read()
 	if err != nil {
 		logError("read article bottom", err)
-		return nil, err
+		return err
 	}
-	return lastPage, nil
+	return nil
 }
 
-func (ptt *PttClient) EnterBoard(board string) error {
+func (ptt *PttClient) EnterBoard(board string) (err error) {
 	searchBoardCmd := []byte("s")
-	err := send(ptt.conn, searchBoardCmd)
+	err = ptt.conn.Send(searchBoardCmd)
 	if err != nil {
 		logError("send search board command", err)
 		return err
 	}
-	d, err := read(ptt.conn)
+	ptt.Screen, err = ptt.conn.Read()
 	if err != nil {
 		logError("read search board command", err)
 		return err
@@ -335,81 +335,38 @@ func (ptt *PttClient) EnterBoard(board string) error {
 
 	searchBoard := []byte(board)
 	for i := range searchBoard {
-		if err = send(ptt.conn, searchBoard[i:i+1]); err != nil {
+		if err = ptt.conn.Send(searchBoard[i : i+1]); err != nil {
 			logError("send search board name", err)
 			return err
 		}
-		_, err = read(ptt.conn)
+		_, err = ptt.conn.Read()
 		if err != nil {
 			logError("read search board name", err)
 			return err
 		}
 	}
 
-	if err = send(ptt.conn, []byte("\r")); err != nil {
+	if err = ptt.conn.Send([]byte("\r")); err != nil {
 		logError("send enter after search board", err)
 		return err
 	}
 	for {
-		d, err = read(ptt.conn)
+		ptt.Screen, err = ptt.conn.Read()
+		ptt.logDebug("read after enter board-\n%s\n", ptt.Screen)
 		if err != nil {
 			logError("read after enter board", err)
 			return err
 		}
-		if bytes.Contains(d, []byte("【板主:")) && bytes.Contains(d, []byte("看板《")) &&
-			!bytes.Contains(d, []byte("按任意鍵繼續")) && !bytes.Contains(d, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
+		if bytes.Contains(ptt.Screen, []byte("【板主:")) && bytes.Contains(ptt.Screen, []byte("看板《")) &&
+			!bytes.Contains(ptt.Screen, []byte("按任意鍵繼續")) && !bytes.Contains(ptt.Screen, []byte("動畫播放中... 可按 q, Ctrl-C 或其它任意鍵停止")) {
 			break
 		}
-		if err = send(ptt.conn, []byte(" ")); err != nil {
+		if err = ptt.conn.Send([]byte(" ")); err != nil {
 			logError("send after enter board", err)
 			return err
 		}
 	}
 	return nil
-}
-
-// keep websocket reading until message size less than 1024
-func read(conn *websocket.Conn) ([]byte, error) {
-	var all []byte
-	for {
-		_, data, err := conn.Read(context.Background())
-		if err != nil {
-			return nil, err
-		}
-		reader := transform.NewReader(bytes.NewBuffer(data), traditionalchinese.Big5.NewDecoder())
-		big5, err := io.ReadAll(reader)
-		if err != nil {
-			return nil, err
-		}
-		// append big5 to all
-		all = append(all, big5...)
-		if len(data) < 1024 {
-			break
-		}
-	}
-	return cleanData(all), nil
-}
-
-func cleanData(data []byte) []byte {
-	// Replace ANSI escape sequences with =ESC=.
-	data = regexp.MustCompile(`\x1B`).ReplaceAll(data, nil)
-
-	// Remove any remaining ANSI escape codes.
-	data = regexp.MustCompile(`\[[\d+;]*m`).ReplaceAll(data, nil)
-
-	// Remove carriage returns.
-	data = bytes.ReplaceAll(data, []byte{'\r'}, nil)
-
-	// Remove backspaces.
-	for bytes.Contains(data, []byte{' ', '\x08'}) {
-		data = bytes.ReplaceAll(data, []byte{' ', '\x08'}, nil)
-	}
-
-	// remove [H [K
-	data = bytes.ReplaceAll(data, []byte("[K"), nil)
-	data = bytes.ReplaceAll(data, []byte("[H"), nil)
-
-	return data
 }
 
 func parseMessage(l []byte, i int32) (*Message, error) {
@@ -430,6 +387,11 @@ func parseMessage(l []byte, i int32) (*Message, error) {
 	space := bytes.Index(l, []byte(" "))
 	colon := bytes.Index(l, []byte(":"))
 	user := l[space+1 : colon]
+	if colon+2 > len(l)-11 {
+		fmt.Printf("not message line: %s\n", l)
+		return nil, errors.New("not message line")
+	}
+
 	return &Message{
 		Id:      i,
 		Time:    t,
@@ -438,11 +400,8 @@ func parseMessage(l []byte, i int32) (*Message, error) {
 	}, nil
 }
 
-func send(c *websocket.Conn, data []byte) error {
-	err := c.Write(context.Background(), websocket.MessageBinary, data)
-	if err != nil {
-		logError("send fail", err)
-		return err
+func (ptt *PttClient) logDebug(format string, a ...interface{}) {
+	if ptt.Debug {
+		fmt.Printf(format, a...)
 	}
-	return nil
 }

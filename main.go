@@ -81,6 +81,8 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 			return
 		} else if errors.Is(err, NotFinishArticleError) {
 			reject.Invoke("有文章尚未完成，請先登入後暫存或捨棄再使用 PTT Chat")
+		} else if errors.Is(err, PttOverloadError) {
+			reject.Invoke("系統過載, 請稍後再來")
 			return
 		}
 		reject.Invoke("登入失敗")
