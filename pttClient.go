@@ -375,6 +375,11 @@ func parseMessage(l []byte, i int32) (*Message, error) {
 	space := bytes.Index(l, []byte(" "))
 	colon := bytes.Index(l, []byte(":"))
 	user := l[space+1 : colon]
+	if colon+2 > len(l)-11 {
+		fmt.Printf("not message line: %s\n", l)
+		return nil, errors.New("not message line")
+	}
+
 	return &Message{
 		Id:      i,
 		Time:    t,

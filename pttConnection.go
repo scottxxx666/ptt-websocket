@@ -61,6 +61,9 @@ func cleanData(data []byte) []byte {
 	// Remove any remaining ANSI escape codes.
 	data = regexp.MustCompile(`\[[\d+;]*m`).ReplaceAll(data, nil)
 
+	// Remove any [21;74H
+	data = regexp.MustCompile(`\[[\d+;]*H`).ReplaceAll(data, nil)
+
 	// Remove carriage returns.
 	data = bytes.ReplaceAll(data, []byte{'\r'}, nil)
 
