@@ -17,7 +17,7 @@ func main() {
 
 func PollingMessagesJs(this js.Value, args []js.Value) interface{} {
 	go PollingMessages(args[0].String(), args[1].String(), args[2].Bool(), args[3].String(), args[4].String(),
-		args[5], args[6])
+		args[5], args[6], args[7].Bool())
 	return nil
 }
 
@@ -55,7 +55,7 @@ func logError(msg string, e error) {
 var ptt *PttClient
 
 func PollingMessages(account string, password string, revokeOthers bool, board string, article string,
-	callback js.Value, reject js.Value) {
+	callback js.Value, reject js.Value, debug bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Println(r)
@@ -67,6 +67,7 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	defer cancel()
 
 	ptt = NewPttClient(ctx)
+	ptt.Debug = debug
 	err := ptt.Connect()
 	if err != nil {
 		reject.Invoke("連線 PTT 失敗")
