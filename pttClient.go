@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"golang.org/x/text/encoding/traditionalchinese"
-	"golang.org/x/text/transform"
 	"math"
 	"sync"
 	"time"
@@ -229,8 +227,7 @@ func (ptt *PttClient) pageEnd() error {
 }
 
 func (ptt *PttClient) PushMessage(message string) error {
-	encoder := traditionalchinese.Big5.NewEncoder()
-	msgBytes, _, err := transform.Bytes(encoder, []byte(message+"\r"))
+	big5, err := Utf8ToUaoBig5(message)
 	if err != nil {
 		logError("encode big5 error", err)
 		return MsgEncodeError
@@ -260,7 +257,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 		}
 	}
 
-	if err = ptt.conn.Send(msgBytes); err != nil {
+	if err = ptt.conn.Send([]byte(big5 + "\r")); err != nil {
 		logError("send push command type", err)
 		return err
 	}

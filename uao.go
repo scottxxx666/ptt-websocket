@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"golang.org/x/text/transform"
 )
@@ -18,7 +19,6 @@ func (c *UaoDecoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err
 			k := binary.BigEndian.Uint16(src[nSrc : nSrc+2])
 			r, ok := B2U[int(k)]
 			if !ok {
-				saveToFile("no.txt", src)
 				fmt.Printf("decode fail: %d %c %s\n", k, byteW, src[nSrc:nSrc+2])
 				dst[nDst] = src[nSrc]
 				size = 1
@@ -47,4 +47,20 @@ func (c *UaoDecoder) Transform(dst, src []byte, atEOF bool) (nDst, nSrc int, err
 
 func NewUaoDecoder() *UaoDecoder {
 	return &UaoDecoder{}
+}
+
+func Utf8ToUaoBig5(src string) (dst string, err error) {
+	for _, s := range src {
+		if s <= 0x80 {
+			dst += string(s)
+			continue
+		}
+		t, ok := U2B[string(s)]
+		if !ok {
+			fmt.Printf("%c\n", s)
+			return "", errors.New("encode error")
+		}
+		dst += t
+	}
+	return dst, nil
 }
