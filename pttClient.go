@@ -214,18 +214,8 @@ func (ptt *PttClient) parsePageMessages(msgId int32, lastMessage *Message) ([]Me
 	}
 
 	msgs := make([]Message, 0, len(reversedMsgs))
-	msgTime := time.Now()
 	for i := len(reversedMsgs) - 1; i >= 0; i-- {
-		msg := reversedMsgs[i]
-
-		// assign last msg time if parse current msg time failed
-		// since we only use last message's time, so assign time from prev is better
-		if msg.Time.IsZero() {
-			msg.Time = msgTime
-		} else {
-			msgTime = msg.Time
-		}
-		msgs = append(msgs, msg)
+		msgs = append(msgs, reversedMsgs[i])
 	}
 
 	return msgs, msgId
