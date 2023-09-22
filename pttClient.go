@@ -24,7 +24,7 @@ type Message struct {
 }
 
 func (m *Message) Equal(input *Message) bool {
-	return m.User == input.User && m.Time.Equal(input.Time) && m.Message == input.Message
+	return m.User == input.User && m.Message == input.Message
 }
 
 func (m *Message) Null() bool {
