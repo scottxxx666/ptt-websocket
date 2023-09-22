@@ -94,6 +94,10 @@ func PollingMessages(account string, password string, revokeOthers bool, board s
 	if err != nil {
 		if errors.Is(err, WrongArticleIdError) {
 			reject.Invoke("找不到這個文章代碼(AID)，可能是文章已消失，或是你找錯看板了")
+			return
+		} else if errors.Is(err, context.DeadlineExceeded) {
+			reject.Invoke("DEADLINE_EXCEEDED")
+			return
 		}
 		reject.Invoke("發生非預期的錯誤，請重試並確認資料填入正確")
 		return
