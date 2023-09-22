@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"nhooyr.io/websocket"
 	"regexp"
+	"time"
 )
 
 type PttConnection struct {
@@ -31,11 +32,21 @@ func (p *PttConnection) Close() {
 	p.conn.Close(websocket.StatusInternalError, "")
 }
 
+func (p *PttConnection) readWithTimeout(duration time.Duration) ([]byte, error) {
+	timeout, cancelFunc := context.WithTimeout(context.Background(), duration)
+	defer cancelFunc()
+	_, data, err := p.conn.Read(timeout)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
+}
+
 // keep websocket reading until message size less than 1024
-func (p *PttConnection) Read() ([]byte, error) {
+func (p *PttConnection) Read(duration time.Duration) ([]byte, error) {
 	var all []byte
 	for {
-		_, data, err := p.conn.Read(context.Background())
+		data, err := p.readWithTimeout(duration)
 		if err != nil {
 			return nil, err
 		}
