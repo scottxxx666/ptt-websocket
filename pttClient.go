@@ -26,7 +26,7 @@ type Message struct {
 }
 
 func (m *Message) Equal(input *Message) bool {
-	return m.User == input.User && m.Time.Equal(input.Time) && m.Message == input.Message
+	return m.User == input.User && m.Message == input.Message
 }
 
 func (m *Message) Null() bool {
@@ -34,16 +34,24 @@ func (m *Message) Null() bool {
 }
 
 type PttClient struct {
-	ctx    context.Context
-	conn   *PttConnection
-	Cancel context.CancelFunc
-	lock   sync.Mutex
-	Screen []byte
-	Debug  bool
+	ctx          context.Context
+	conn         *PttConnection
+	Cancel       context.CancelFunc
+	lock         sync.Mutex
+	Screen       []byte
+	Debug        bool
+	timeout      time.Duration
+	loginTimeout time.Duration
 }
 
 func NewPttClient(context context.Context) *PttClient {
-	return &PttClient{ctx: context, conn: NewPttConnection(context), Debug: false}
+	return &PttClient{
+		ctx:          context,
+		conn:         NewPttConnection(context),
+		Debug:        false,
+		timeout:      2000 * time.Millisecond,
+		loginTimeout: 30000 * time.Millisecond,
+	}
 }
 
 func (ptt *PttClient) Connect() (err error) {
@@ -61,7 +69,7 @@ func (ptt *PttClient) Close() {
 
 func (ptt *PttClient) Login(account string, password string, revokeOthers bool) (err error) {
 	for {
-		ptt.Screen, err = ptt.conn.Read()
+		err = ptt.Read(ptt.loginTimeout)
 		ptt.logDebug("Login----\n%s\n----\n", ptt.Screen)
 		if err != nil {
 			logError("read fail", err)
@@ -80,7 +88,8 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 					logError("send account", err)
 					return err
 				}
-				if _, err = ptt.conn.Read(); err != nil {
+				err = ptt.Read(6000 * time.Millisecond)
+				if err != nil {
 					logError("send account read", err)
 					return err
 				}
@@ -136,6 +145,12 @@ func (ptt *PttClient) Login(account string, password string, revokeOthers bool) 
 		}
 	}
 	return nil
+}
+
+func (ptt *PttClient) Read(duration time.Duration) error {
+	var err error
+	ptt.Screen, err = ptt.conn.Read(duration)
+	return err
 }
 
 func (ptt *PttClient) PullMessages(board string, article string, callback js.Value) error {
@@ -226,7 +241,7 @@ func (ptt *PttClient) pageEnd() error {
 		logError("send article bottom command", err)
 		return err
 	}
-	ptt.Screen, err = ptt.conn.Read()
+	err = ptt.Read(ptt.timeout)
 	if err != nil {
 		logError("read article bottom", err)
 		return err
@@ -247,7 +262,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 		logError("send push command", err)
 		return err
 	}
-	ptt.Screen, err = ptt.conn.Read()
+	err = ptt.Read(ptt.timeout)
 	if err != nil {
 		logError("read push command", err)
 		return err
@@ -258,7 +273,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 			logError("send push command type", err)
 			return err
 		}
-		ptt.Screen, err = ptt.conn.Read()
+		err = ptt.Read(ptt.timeout)
 		if err != nil {
 			logError("read push command", err)
 			return err
@@ -269,7 +284,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 		logError("send push command type", err)
 		return err
 	}
-	ptt.Screen, err = ptt.conn.Read()
+	err = ptt.Read(ptt.timeout)
 	if err != nil {
 		logError("read push command", err)
 		return err
@@ -279,7 +294,7 @@ func (ptt *PttClient) PushMessage(message string) error {
 		logError("send push command type", err)
 		return err
 	}
-	ptt.Screen, err = ptt.conn.Read()
+	err = ptt.Read(ptt.timeout)
 	if err != nil {
 		logError("read push command", err)
 		return err
@@ -295,7 +310,7 @@ func (ptt *PttClient) fetchArticleEnd(article string) (err error) {
 			logError("send search article", err)
 			return err
 		}
-		ptt.Screen, err = ptt.conn.Read()
+		err = ptt.Read(ptt.timeout)
 		if err != nil {
 			logError("read search article", err)
 			return err
@@ -309,7 +324,7 @@ func (ptt *PttClient) fetchArticleEnd(article string) (err error) {
 		logError("send article enter command", err)
 		return err
 	}
-	ptt.Screen, err = ptt.conn.Read()
+	err = ptt.Read(ptt.timeout)
 	if err != nil {
 		logError("read article bottom", err)
 		return err
@@ -324,7 +339,7 @@ func (ptt *PttClient) EnterBoard(board string) (err error) {
 		logError("send search board command", err)
 		return err
 	}
-	ptt.Screen, err = ptt.conn.Read()
+	err = ptt.Read(ptt.timeout)
 	if err != nil {
 		logError("read search board command", err)
 		return err
@@ -336,7 +351,7 @@ func (ptt *PttClient) EnterBoard(board string) (err error) {
 			logError("send search board name", err)
 			return err
 		}
-		_, err = ptt.conn.Read()
+		err = ptt.Read(ptt.timeout)
 		if err != nil {
 			logError("read search board name", err)
 			return err
@@ -348,7 +363,7 @@ func (ptt *PttClient) EnterBoard(board string) (err error) {
 		return err
 	}
 	for {
-		ptt.Screen, err = ptt.conn.Read()
+		err = ptt.Read(ptt.timeout)
 		ptt.logDebug("read after enter board-\n%s\n", ptt.Screen)
 		if err != nil {
 			logError("read after enter board", err)
